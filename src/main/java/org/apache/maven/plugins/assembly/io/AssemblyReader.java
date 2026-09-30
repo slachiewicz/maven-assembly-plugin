@@ -21,7 +21,6 @@ package org.apache.maven.plugins.assembly.io;
 import java.io.File;
 import java.util.List;
 
-import org.apache.maven.plugin.MojoFailureException;
 import org.apache.maven.plugins.assembly.AssemblerConfigurationSource;
 import org.apache.maven.plugins.assembly.InvalidAssemblerConfigurationException;
 import org.apache.maven.plugins.assembly.model.Assembly;
@@ -41,5 +40,5 @@ public interface AssemblyReader {
             throws AssemblyReadException, InvalidAssemblerConfigurationException;
 
     void includeSiteInAssembly(Assembly assembly, AssemblerConfigurationSource configSource)
-            throws MojoFailureException, InvalidAssemblerConfigurationException;
+            throws InvalidAssemblerConfigurationException;
 }

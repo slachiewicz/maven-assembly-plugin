@@ -57,7 +57,7 @@ public class ReaderFormatter {
                     configSource.getProject(),
                     configSource.getFilters(),
                     isPropertiesFile,
-                    configSource.getMavenSession(),
+                    configSource.getSession(),
                     additionalProperties);
 
             filterRequest.setEscapeString(escapeString);

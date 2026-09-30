@@ -22,29 +22,32 @@ import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Properties;
+import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
-import org.apache.maven.artifact.Artifact;
-import org.apache.maven.artifact.handler.ArtifactHandler;
-import org.apache.maven.artifact.repository.MavenArtifactRepository;
-import org.apache.maven.artifact.repository.layout.DefaultRepositoryLayout;
-import org.apache.maven.execution.MavenSession;
-import org.apache.maven.model.Model;
+import org.apache.maven.api.ArtifactCoordinates;
+import org.apache.maven.api.DownloadedArtifact;
+import org.apache.maven.api.Project;
+import org.apache.maven.api.RemoteRepository;
+import org.apache.maven.api.Session;
+import org.apache.maven.api.model.Model;
+import org.apache.maven.api.services.ProjectBuilder;
+import org.apache.maven.api.services.ProjectBuilderException;
+import org.apache.maven.api.services.ProjectBuilderRequest;
+import org.apache.maven.api.services.ProjectBuilderResult;
+import org.apache.maven.api.services.ProjectManager;
 import org.apache.maven.plugins.assembly.AssemblerConfigurationSource;
 import org.apache.maven.plugins.assembly.InvalidAssemblerConfigurationException;
 import org.apache.maven.plugins.assembly.archive.ArchiveCreationException;
 import org.apache.maven.plugins.assembly.archive.DefaultAssemblyArchiverTest;
+import org.apache.maven.plugins.assembly.artifact.AssemblyArtifact;
 import org.apache.maven.plugins.assembly.format.AssemblyFormattingException;
 import org.apache.maven.plugins.assembly.model.DependencySet;
 import org.apache.maven.plugins.assembly.model.UnpackOptions;
-import org.apache.maven.project.DefaultProjectBuildingRequest;
-import org.apache.maven.project.MavenProject;
-import org.apache.maven.project.ProjectBuilder;
-import org.apache.maven.project.ProjectBuildingException;
-import org.apache.maven.project.ProjectBuildingRequest;
-import org.apache.maven.project.ProjectBuildingResult;
+import org.apache.maven.plugins.assembly.testutils.TestStubs;
 import org.codehaus.plexus.archiver.ArchivedFileSet;
 import org.codehaus.plexus.archiver.Archiver;
 import org.codehaus.plexus.archiver.ArchiverException;
@@ -64,8 +67,8 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -74,6 +77,43 @@ import static org.mockito.Mockito.when;
 class AddDependencySetsTaskTest {
     @TempDir
     private File temporaryFolder;
+
+    /**
+     * A session whose project builder returns {@code builtProject} for any dependency, or fails if that is null.
+     */
+    private Session sessionBuilding(Project builtProject, List<RemoteRepository> repositories, Project repositoriesOf)
+            throws ProjectBuilderException, IOException {
+        final Session session = TestStubs.session();
+        when(session.getUserProperties()).thenReturn(new HashMap<>());
+        when(session.getSystemProperties()).thenReturn(new HashMap<>());
+
+        final ArtifactCoordinates pomCoordinates = mock(ArtifactCoordinates.class);
+        lenient()
+                .when(session.createArtifactCoordinates(any(String.class), any(), any(), any(String.class)))
+                .thenReturn(pomCoordinates);
+        final DownloadedArtifact pom = mock(DownloadedArtifact.class);
+        lenient()
+                .when(pom.getPath())
+                .thenReturn(newFile(temporaryFolder, "dep.pom").toPath());
+        lenient().when(session.resolveArtifact(pomCoordinates, repositories)).thenReturn(pom);
+
+        final ProjectManager projectManager = session.getService(ProjectManager.class);
+        lenient()
+                .when(projectManager.getRemoteProjectRepositories(repositoriesOf))
+                .thenReturn(repositories);
+
+        final ProjectBuilder projectBuilder = mock(ProjectBuilder.class);
+        if (builtProject != null) {
+            final ProjectBuilderResult result = mock(ProjectBuilderResult.class);
+            when(result.getProject()).thenReturn(Optional.of(builtProject));
+            when(projectBuilder.build(any(ProjectBuilderRequest.class))).thenReturn(result);
+        } else {
+            when(projectBuilder.build(any(ProjectBuilderRequest.class)))
+                    .thenThrow(new ProjectBuilderException("test", new Exception("Test error.")));
+        }
+        lenient().when(session.getService(ProjectBuilder.class)).thenReturn(projectBuilder);
+        return session;
+    }
 
     @Test
     void addDependencySetShouldInterpolateDefaultOutputFileNameMapping() throws Exception {
@@ -91,55 +131,32 @@ class AddDependencySetsTaskTest {
         ds.setDirectoryMode(Integer.toString(10, 8));
         ds.setFileMode(Integer.toString(10, 8));
 
-        final Model mainModel = new Model();
-        mainModel.setArtifactId(mainAid);
-        mainModel.setGroupId(mainGid);
-        mainModel.setVersion(mainVer);
+        final Project mainProject = TestStubs.project(mainGid, mainAid, mainVer);
 
-        final MavenProject mainProject = new MavenProject(mainModel);
+        final Project depProject = TestStubs.project(
+                Model.newBuilder()
+                        .groupId(depGid)
+                        .artifactId(depAid)
+                        .version(depVer)
+                        .packaging(depExt)
+                        .build(),
+                null,
+                null,
+                depExt);
 
-        Artifact mainArtifact = mock(Artifact.class);
-        mainProject.setArtifact(mainArtifact);
-
-        final Model depModel = new Model();
-        depModel.setArtifactId(depAid);
-        depModel.setGroupId(depGid);
-        depModel.setVersion(depVer);
-        depModel.setPackaging(depExt);
-
-        final MavenProject depProject = new MavenProject(depModel);
-
-        Artifact depArtifact = mock(Artifact.class);
-        ArtifactHandler artifactHandler = mock(ArtifactHandler.class);
-        when(artifactHandler.getExtension()).thenReturn(depExt);
-        when(depArtifact.getArtifactHandler()).thenReturn(artifactHandler);
         final File newFile = File.createTempFile("junit", null, temporaryFolder);
-        when(depArtifact.getFile()).thenReturn(newFile);
-        when(depArtifact.getGroupId()).thenReturn("GROUPID");
+        // the artifact id and version are left out so that the ones of the project are used
+        final AssemblyArtifact depArtifact = new AssemblyArtifact(
+                null, "GROUPID", null, null, "1", null, depExt, depExt, "compile", false, newFile, null, null);
 
-        depProject.setArtifact(depArtifact);
-        MavenArtifactRepository remoteRepository = new MavenArtifactRepository();
-        remoteRepository.setId("project-repository");
-        remoteRepository.setUrl("https://repository.example/");
-        remoteRepository.setLayout(new DefaultRepositoryLayout());
-        depProject.setRemoteArtifactRepositories(Collections.singletonList(remoteRepository));
-
-        ProjectBuildingResult pbr = mock(ProjectBuildingResult.class);
-        when(pbr.getProject()).thenReturn(depProject);
-
-        final ProjectBuilder projectBuilder = mock(ProjectBuilder.class);
-        when(projectBuilder.build(any(Artifact.class), any(ProjectBuildingRequest.class)))
-                .thenReturn(pbr);
-
-        final MavenSession session = mock(MavenSession.class);
-        when(session.getProjectBuildingRequest()).thenReturn(new DefaultProjectBuildingRequest());
-        when(session.getUserProperties()).thenReturn(new Properties());
-        when(session.getSystemProperties()).thenReturn(new Properties());
+        final RemoteRepository remoteRepository = mock(RemoteRepository.class);
+        when(remoteRepository.getId()).thenReturn("project-repository");
+        final Session session = sessionBuilding(depProject, Collections.singletonList(remoteRepository), depProject);
 
         final AssemblerConfigurationSource configSource = mock(AssemblerConfigurationSource.class);
         when(configSource.getFinalName()).thenReturn(mainAid + "-" + mainVer);
         when(configSource.getProject()).thenReturn(mainProject);
-        when(configSource.getMavenSession()).thenReturn(session);
+        when(configSource.getSession()).thenReturn(session);
 
         final Archiver archiver = mock(Archiver.class);
         when(archiver.getDestFile()).thenReturn(new File("junk"));
@@ -149,13 +166,13 @@ class AddDependencySetsTaskTest {
         DefaultAssemblyArchiverTest.setupInterpolators(configSource, mainProject);
 
         final AddDependencySetsTask task = new AddDependencySetsTask(
-                Collections.singletonList(ds), Collections.singleton(depArtifact), depProject, projectBuilder);
+                Collections.singletonList(ds), Collections.singleton(depArtifact), depProject);
 
         task.addDependencySet(ds, archiver, configSource);
 
         // result of easymock migration, should be assert of expected result instead of verifying methodcalls
         verify(configSource).getFinalName();
-        verify(configSource, atLeastOnce()).getMavenSession();
+        verify(configSource, atLeastOnce()).getSession();
         verify(configSource, atLeastOnce()).getProject();
 
         verify(archiver, atLeastOnce()).getDestFile();
@@ -167,36 +184,36 @@ class AddDependencySetsTaskTest {
         verify(archiver).setFileMode(10);
         verify(archiver).setFileMode(146);
 
-        verify(session).getProjectBuildingRequest();
-        verify(session, times(2)).getUserProperties();
-        verify(session, times(2)).getSystemProperties();
+        verify(session, atLeastOnce()).getUserProperties();
+        verify(session, atLeastOnce()).getSystemProperties();
 
-        ArgumentCaptor<ProjectBuildingRequest> request = ArgumentCaptor.forClass(ProjectBuildingRequest.class);
-        verify(projectBuilder).build(any(Artifact.class), request.capture());
+        ArgumentCaptor<ProjectBuilderRequest> request = ArgumentCaptor.forClass(ProjectBuilderRequest.class);
+        verify(session.getService(ProjectBuilder.class)).build(request.capture());
         assertEquals(
                 "project-repository",
-                request.getValue().getRemoteRepositories().get(0).getId());
+                request.getValue().getRepositories().get(0).getId());
     }
 
     @Test
     void addDependencySetShouldNotAddDependenciesWhenProjectHasNone() throws Exception {
-        final MavenProject project = new MavenProject(new Model());
+        final Project project = TestStubs.project("group", "artifact", "1.0");
 
         final DependencySet ds = new DependencySet();
         ds.setOutputDirectory("/out");
 
-        final AddDependencySetsTask task =
-                new AddDependencySetsTask(Collections.singletonList(ds), null, project, null);
+        final AddDependencySetsTask task = new AddDependencySetsTask(Collections.singletonList(ds), null, project);
 
-        task.addDependencySet(ds, null, null);
+        final AssemblerConfigurationSource configSource = mock(AssemblerConfigurationSource.class);
+        final Session session = TestStubs.session();
+        when(configSource.getSession()).thenReturn(session);
+
+        task.addDependencySet(ds, null, configSource);
     }
 
-    // TODO: Find a better way of testing the project-stubbing behavior when a ProjectBuildingException takes place.
+    // TODO: Find a better way of testing the behavior when the project of a dependency cannot be built.
     @Test
     void addDependencySetShouldNotAddDependenciesWhenProjectIsStubbed() throws Exception {
-        final MavenProject project = new MavenProject(new Model());
-
-        final ProjectBuildingException pbe = new ProjectBuildingException("test", "Test error.", new Throwable());
+        final Project project = TestStubs.project("group", "artifact", "1.0");
 
         final String aid = "test-dep";
         final String version = "2.0-SNAPSHOT";
@@ -204,14 +221,7 @@ class AddDependencySetsTaskTest {
 
         final File file = new File("dep-artifact.jar");
 
-        Artifact depArtifact = mock(Artifact.class);
-        when(depArtifact.getGroupId()).thenReturn("GROUPID");
-        when(depArtifact.getArtifactId()).thenReturn(aid);
-        when(depArtifact.getBaseVersion()).thenReturn(version);
-        when(depArtifact.getFile()).thenReturn(file);
-        ArtifactHandler artifactHandler = mock(ArtifactHandler.class);
-        when(artifactHandler.getExtension()).thenReturn(type);
-        when(depArtifact.getArtifactHandler()).thenReturn(artifactHandler);
+        final AssemblyArtifact depArtifact = TestStubs.artifact("GROUPID", aid, version, type, "compile", file);
 
         final File destFile = new File("assembly-dep-set.zip");
 
@@ -220,32 +230,25 @@ class AddDependencySetsTaskTest {
         when(archiver.getOverrideDirectoryMode()).thenReturn(0222);
         when(archiver.getOverrideFileMode()).thenReturn(0222);
 
-        final ProjectBuilder projectBuilder = mock(ProjectBuilder.class);
-        when(projectBuilder.build(any(Artifact.class), any(ProjectBuildingRequest.class)))
-                .thenThrow(pbe);
-
-        final MavenSession session = mock(MavenSession.class);
-        when(session.getProjectBuildingRequest()).thenReturn(new DefaultProjectBuildingRequest());
-        when(session.getUserProperties()).thenReturn(new Properties());
-        when(session.getSystemProperties()).thenReturn(new Properties());
+        final Session session = sessionBuilding(null, Collections.emptyList(), project);
 
         final AssemblerConfigurationSource configSource = mock(AssemblerConfigurationSource.class);
         when(configSource.getFinalName()).thenReturn("final-name");
-        when(configSource.getMavenSession()).thenReturn(session);
+        when(configSource.getSession()).thenReturn(session);
         when(configSource.getProject()).thenReturn(project);
 
         final DependencySet ds = new DependencySet();
         ds.setOutputDirectory("/out");
         DefaultAssemblyArchiverTest.setupInterpolators(configSource, project);
 
-        final AddDependencySetsTask task = new AddDependencySetsTask(
-                Collections.singletonList(ds), Collections.singleton(depArtifact), project, projectBuilder);
+        final AddDependencySetsTask task =
+                new AddDependencySetsTask(Collections.singletonList(ds), Collections.singleton(depArtifact), project);
 
         task.addDependencySet(ds, archiver, configSource);
 
         // result of easymock migration, should be assert of expected result instead of verifying methodcalls
         verify(configSource).getFinalName();
-        verify(configSource, atLeastOnce()).getMavenSession();
+        verify(configSource, atLeastOnce()).getSession();
         verify(configSource, atLeastOnce()).getProject();
 
         verify(archiver).addFile(file, "out/" + aid + "-" + version + "." + type);
@@ -253,11 +256,10 @@ class AddDependencySetsTaskTest {
         verify(archiver).getOverrideDirectoryMode();
         verify(archiver).getOverrideFileMode();
 
-        verify(session).getProjectBuildingRequest();
-        verify(session, times(2)).getUserProperties();
-        verify(session, times(2)).getSystemProperties();
+        verify(session, atLeastOnce()).getUserProperties();
+        verify(session, atLeastOnce()).getSystemProperties();
 
-        verify(projectBuilder).build(any(Artifact.class), any(ProjectBuildingRequest.class));
+        verify(session.getService(ProjectBuilder.class)).build(any(ProjectBuilderRequest.class));
     }
 
     @Test
@@ -272,31 +274,29 @@ class AddDependencySetsTaskTest {
 
     private void verifyOneDependencyAdded(final String outputLocation, final boolean unpack)
             throws AssemblyFormattingException, ArchiverException, ArchiveCreationException, IOException,
-                    InvalidAssemblerConfigurationException, ProjectBuildingException {
-        final MavenProject project = new MavenProject(new Model());
+                    InvalidAssemblerConfigurationException, ProjectBuilderException {
+        final Project project = TestStubs.project("group", "artifact", "1.0");
 
         final DependencySet ds = new DependencySet();
         ds.setOutputDirectory(outputLocation);
         ds.setOutputFileNameMapping("artifact");
         ds.setUnpack(unpack);
-        ds.setScope(Artifact.SCOPE_COMPILE);
+        ds.setScope(AssemblyArtifact.SCOPE_COMPILE);
 
         ds.setDirectoryMode(Integer.toString(10, 8));
         ds.setFileMode(Integer.toString(10, 8));
 
-        final MavenSession session = mock(MavenSession.class);
-        when(session.getProjectBuildingRequest()).thenReturn(new DefaultProjectBuildingRequest());
-        when(session.getUserProperties()).thenReturn(new Properties());
-        when(session.getSystemProperties()).thenReturn(new Properties());
+        final Project depProject = TestStubs.project("GROUPID", "unknown", "0");
+
+        final Session session = sessionBuilding(depProject, Collections.emptyList(), project);
 
         final AssemblerConfigurationSource configSource = mock(AssemblerConfigurationSource.class);
-        when(configSource.getMavenSession()).thenReturn(session);
+        when(configSource.getSession()).thenReturn(session);
         when(configSource.getFinalName()).thenReturn("final-name");
 
-        Artifact artifact = mock(Artifact.class);
         final File artifactFile = File.createTempFile("junit", null, temporaryFolder);
-        when(artifact.getFile()).thenReturn(artifactFile);
-        when(artifact.getGroupId()).thenReturn("GROUPID");
+        final AssemblyArtifact artifact =
+                TestStubs.artifact("GROUPID", "artifact", "1", "jar", "compile", artifactFile);
 
         final Archiver archiver = mock(Archiver.class);
         when(archiver.getDestFile()).thenReturn(new File("junk"));
@@ -307,25 +307,15 @@ class AddDependencySetsTaskTest {
             when(configSource.getProject()).thenReturn(project);
         }
 
-        final MavenProject depProject = new MavenProject(new Model());
-        depProject.setGroupId("GROUPID");
-
-        ProjectBuildingResult pbr = mock(ProjectBuildingResult.class);
-        when(pbr.getProject()).thenReturn(depProject);
-
-        final ProjectBuilder projectBuilder = mock(ProjectBuilder.class);
-        when(projectBuilder.build(any(Artifact.class), any(ProjectBuildingRequest.class)))
-                .thenReturn(pbr);
-
-        final AddDependencySetsTask task = new AddDependencySetsTask(
-                Collections.singletonList(ds), Collections.singleton(artifact), project, projectBuilder);
+        final AddDependencySetsTask task =
+                new AddDependencySetsTask(Collections.singletonList(ds), Collections.singleton(artifact), project);
         DefaultAssemblyArchiverTest.setupInterpolators(configSource, project);
 
         task.addDependencySet(ds, archiver, configSource);
 
         // result of easymock migration, should be assert of expected result instead of verifying methodcalls
         verify(configSource).getFinalName();
-        verify(configSource, atLeastOnce()).getMavenSession();
+        verify(configSource, atLeastOnce()).getSession();
 
         verify(archiver, atLeastOnce()).getDestFile();
         verify(archiver).getOverrideDirectoryMode();
@@ -335,11 +325,10 @@ class AddDependencySetsTaskTest {
         verify(archiver).setDirectoryMode(10);
         verify(archiver).setDirectoryMode(146);
 
-        verify(session).getProjectBuildingRequest();
         verify(session, atLeastOnce()).getUserProperties();
         verify(session, atLeastOnce()).getSystemProperties();
 
-        verify(projectBuilder).build(any(Artifact.class), any(ProjectBuildingRequest.class));
+        verify(session.getService(ProjectBuilder.class)).build(any(ProjectBuilderRequest.class));
 
         if (unpack) {
             verify(archiver).addArchivedFileSet(any(ArchivedFileSet.class), isNull());
@@ -351,17 +340,16 @@ class AddDependencySetsTaskTest {
 
     @Test
     void getDependencyArtifactsShouldGetOneDependencyArtifact() throws Exception {
-        final MavenProject project = new MavenProject(new Model());
+        final Project project = TestStubs.project("group", "artifact", "1.0");
 
-        Artifact artifact = mock(Artifact.class);
-        project.setArtifacts(Collections.singleton(artifact));
+        AssemblyArtifact artifact = TestStubs.artifact("group", "artifact", "1.0");
 
         final DependencySet dependencySet = new DependencySet();
 
         final AddDependencySetsTask task = new AddDependencySetsTask(
-                Collections.singletonList(dependencySet), Collections.singleton(artifact), project, null);
+                Collections.singletonList(dependencySet), Collections.singleton(artifact), project);
 
-        final Set<Artifact> result = task.resolveDependencyArtifacts(dependencySet);
+        final Set<AssemblyArtifact> result = task.resolveDependencyArtifacts(TestStubs.session(), dependencySet);
 
         assertNotNull(result);
         assertEquals(1, result.size());
@@ -370,18 +358,14 @@ class AddDependencySetsTaskTest {
 
     @Test
     void getDependencyArtifactsShouldFilterOneDependencyArtifactViaInclude() throws Exception {
-        final MavenProject project = new MavenProject(new Model());
+        final Project project = TestStubs.project("group", "artifact", "1.0");
 
-        final Set<Artifact> artifacts = new HashSet<>();
+        final Set<AssemblyArtifact> artifacts = new HashSet<>();
 
-        Artifact am1 = mock(Artifact.class);
-        when(am1.getGroupId()).thenReturn("group");
-        when(am1.getArtifactId()).thenReturn("artifact");
+        AssemblyArtifact am1 = TestStubs.artifact("group", "artifact", "1.0");
         artifacts.add(am1);
 
-        Artifact am2 = mock(Artifact.class);
-        when(am2.getGroupId()).thenReturn("group2");
-        when(am2.getId()).thenReturn("group2:artifact2:1.0:jar");
+        AssemblyArtifact am2 = TestStubs.artifact("group2", "artifact2", "1.0");
         artifacts.add(am2);
 
         final DependencySet dependencySet = new DependencySet();
@@ -390,9 +374,9 @@ class AddDependencySetsTaskTest {
         dependencySet.setUseTransitiveFiltering(true);
 
         final AddDependencySetsTask task =
-                new AddDependencySetsTask(Collections.singletonList(dependencySet), artifacts, project, null);
+                new AddDependencySetsTask(Collections.singletonList(dependencySet), artifacts, project);
 
-        final Set<Artifact> result = task.resolveDependencyArtifacts(dependencySet);
+        final Set<AssemblyArtifact> result = task.resolveDependencyArtifacts(TestStubs.session(), dependencySet);
 
         assertNotNull(result);
         assertEquals(1, result.size());
@@ -401,18 +385,14 @@ class AddDependencySetsTaskTest {
 
     @Test
     void getDependencyArtifactsShouldIgnoreTransitivePathFilteringWhenIncludeNotTransitive() throws Exception {
-        final MavenProject project = new MavenProject(new Model());
+        final Project project = TestStubs.project("group", "artifact", "1.0");
 
-        final Set<Artifact> artifacts = new HashSet<>();
+        final Set<AssemblyArtifact> artifacts = new HashSet<>();
 
-        Artifact am1 = mock(Artifact.class);
-        when(am1.getGroupId()).thenReturn("group");
-        when(am1.getArtifactId()).thenReturn("artifact");
+        AssemblyArtifact am1 = TestStubs.artifact("group", "artifact", "1.0");
         artifacts.add(am1);
 
-        Artifact am2 = mock(Artifact.class);
-        when(am2.getGroupId()).thenReturn("group2");
-        when(am2.getId()).thenReturn("group2:artifact2:1.0:jar");
+        AssemblyArtifact am2 = TestStubs.artifact("group2", "artifact2", "1.0");
         artifacts.add(am2);
 
         final DependencySet dependencySet = new DependencySet();
@@ -421,9 +401,9 @@ class AddDependencySetsTaskTest {
         dependencySet.setUseTransitiveFiltering(false);
 
         final AddDependencySetsTask task =
-                new AddDependencySetsTask(Collections.singletonList(dependencySet), artifacts, project, null);
+                new AddDependencySetsTask(Collections.singletonList(dependencySet), artifacts, project);
 
-        final Set<Artifact> result = task.resolveDependencyArtifacts(dependencySet);
+        final Set<AssemblyArtifact> result = task.resolveDependencyArtifacts(TestStubs.session(), dependencySet);
 
         assertNotNull(result);
         assertEquals(1, result.size());
@@ -433,19 +413,13 @@ class AddDependencySetsTaskTest {
     // MASSEMBLY-879
     @Test
     void useDefaultExcludes() throws Exception {
-        Artifact zipArtifact = mock(Artifact.class);
-        when(zipArtifact.getGroupId()).thenReturn("some-artifact");
-        when(zipArtifact.getArtifactId()).thenReturn("of-type-zip");
-        when(zipArtifact.getId()).thenReturn("some-artifact:of-type-zip:1.0:zip");
-        when(zipArtifact.getFile()).thenReturn(newFile(temporaryFolder, "of-type-zip.zip"));
+        AssemblyArtifact zipArtifact = TestStubs.artifact(
+                "some-artifact", "of-type-zip", "1.0", "zip", "compile", newFile(temporaryFolder, "of-type-zip.zip"));
 
-        Artifact dirArtifact = mock(Artifact.class);
-        when(dirArtifact.getGroupId()).thenReturn("some-artifact");
-        when(dirArtifact.getArtifactId()).thenReturn("of-type-zip");
-        when(dirArtifact.getId()).thenReturn("some-artifact:of-type-zip:1.0:dir");
-        when(dirArtifact.getFile()).thenReturn(newFolder(temporaryFolder, "of-type-zip"));
+        AssemblyArtifact dirArtifact = TestStubs.artifact(
+                "some-artifact", "of-type-zip", "1.0", "dir", "compile", newFolder(temporaryFolder, "of-type-zip"));
 
-        final Set<Artifact> artifacts = new HashSet<>(Arrays.asList(zipArtifact, dirArtifact));
+        final Set<AssemblyArtifact> artifacts = new HashSet<>(Arrays.asList(zipArtifact, dirArtifact));
 
         final DependencySet dependencySet = new DependencySet();
         dependencySet.setUseProjectArtifact(false);
@@ -456,25 +430,15 @@ class AddDependencySetsTaskTest {
         unpackOptions.setUseDefaultExcludes(false);
         dependencySet.setUnpackOptions(unpackOptions);
 
-        final MavenProject project = new MavenProject(new Model());
-        project.setGroupId("GROUPID");
+        final Project project = TestStubs.project("GROUPID", "artifact", "1.0");
 
-        ProjectBuildingRequest pbReq = new DefaultProjectBuildingRequest();
-        ProjectBuildingResult pbRes = mock(ProjectBuildingResult.class);
-        when(pbRes.getProject()).thenReturn(project);
-
-        final ProjectBuilder projectBuilder = mock(ProjectBuilder.class);
-        when(projectBuilder.build(any(Artifact.class), any(ProjectBuildingRequest.class)))
-                .thenReturn(pbRes);
+        final Session session = sessionBuilding(project, Collections.emptyList(), project);
 
         final AddDependencySetsTask task =
-                new AddDependencySetsTask(Collections.singletonList(dependencySet), artifacts, project, projectBuilder);
-
-        final MavenSession session = mock(MavenSession.class);
-        when(session.getProjectBuildingRequest()).thenReturn(pbReq);
+                new AddDependencySetsTask(Collections.singletonList(dependencySet), artifacts, project);
 
         final AssemblerConfigurationSource configSource = mock(AssemblerConfigurationSource.class);
-        when(configSource.getMavenSession()).thenReturn(session);
+        when(configSource.getSession()).thenReturn(session);
         DefaultAssemblyArchiverTest.setupInterpolators(configSource, project);
 
         final Archiver archiver = mock(Archiver.class);

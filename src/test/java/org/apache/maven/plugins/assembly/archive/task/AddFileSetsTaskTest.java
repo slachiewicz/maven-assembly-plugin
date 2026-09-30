@@ -22,12 +22,12 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 
-import org.apache.maven.model.Model;
+import org.apache.maven.api.Project;
 import org.apache.maven.plugins.assembly.AssemblerConfigurationSource;
 import org.apache.maven.plugins.assembly.archive.ArchiveCreationException;
 import org.apache.maven.plugins.assembly.archive.DefaultAssemblyArchiverTest;
 import org.apache.maven.plugins.assembly.model.FileSet;
-import org.apache.maven.project.MavenProject;
+import org.apache.maven.plugins.assembly.testutils.TestStubs;
 import org.codehaus.plexus.archiver.Archiver;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -124,9 +124,8 @@ class AddFileSetsTaskTest {
 
         final AssemblerConfigurationSource configSource = mock(AssemblerConfigurationSource.class);
 
-        final MavenProject project = new MavenProject(new Model());
-        project.setGroupId("GROUPID");
-        project.setFile(new File(basedir, "pom.xml"));
+        final Project project = TestStubs.project(
+                TestStubs.model("GROUPID", "unknown", "0"), new File(basedir, "pom.xml").toPath(), null, "jar");
 
         DefaultAssemblyArchiverTest.setupInterpolators(configSource, project);
 
@@ -138,7 +137,7 @@ class AddFileSetsTaskTest {
 
         // result of easymock migration, should be assert of expected result instead of verifying methodcalls
         verify(configSource, atLeastOnce()).getFinalName();
-        verify(configSource, atLeastOnce()).getMavenSession();
+        verify(configSource, atLeastOnce()).getSession();
 
         verify(archiver, times(2)).getOverrideDirectoryMode();
         verify(archiver, times(2)).getOverrideFileMode();
@@ -164,8 +163,7 @@ class AddFileSetsTaskTest {
 
         final AssemblerConfigurationSource configSource = mock(AssemblerConfigurationSource.class);
 
-        final MavenProject project = new MavenProject(new Model());
-        project.setGroupId("GROUPID");
+        final Project project = TestStubs.project("GROUPID", "unknown", "0");
         DefaultAssemblyArchiverTest.setupInterpolators(configSource, project);
 
         final AddFileSetsTask task = new AddFileSetsTask(new ArrayList<>());
@@ -175,7 +173,7 @@ class AddFileSetsTaskTest {
 
         // result of easymock migration, should be assert of expected result instead of verifying methodcalls
         verify(configSource, atLeastOnce()).getFinalName();
-        verify(configSource, atLeastOnce()).getMavenSession();
+        verify(configSource, atLeastOnce()).getSession();
 
         verify(archiver, times(2)).getOverrideDirectoryMode();
         verify(archiver, times(2)).getOverrideFileMode();
@@ -196,8 +194,7 @@ class AddFileSetsTaskTest {
         when(archiver.getOverrideDirectoryMode()).thenReturn(-1);
         when(archiver.getOverrideFileMode()).thenReturn(-1);
 
-        final MavenProject project = new MavenProject(new Model());
-        project.setGroupId("GROUPID");
+        final Project project = TestStubs.project("GROUPID", "unknown", "0");
 
         DefaultAssemblyArchiverTest.setupInterpolators(configSource, project);
 
@@ -208,7 +205,7 @@ class AddFileSetsTaskTest {
 
         // result of easymock migration, should be assert of expected result instead of verifying methodcalls
         verify(configSource, atLeastOnce()).getFinalName();
-        verify(configSource, atLeastOnce()).getMavenSession();
+        verify(configSource, atLeastOnce()).getSession();
 
         verify(archiver).getOverrideDirectoryMode();
         verify(archiver).getOverrideFileMode();

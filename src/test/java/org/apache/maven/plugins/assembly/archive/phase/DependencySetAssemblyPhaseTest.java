@@ -18,16 +18,12 @@
  */
 package org.apache.maven.plugins.assembly.archive.phase;
 
-import java.util.Collections;
 import java.util.LinkedHashMap;
 
-import org.apache.maven.artifact.Artifact;
-import org.apache.maven.model.Model;
+import org.apache.maven.plugins.assembly.artifact.AssemblyArtifact;
 import org.apache.maven.plugins.assembly.artifact.DependencyResolver;
 import org.apache.maven.plugins.assembly.model.Assembly;
 import org.apache.maven.plugins.assembly.model.DependencySet;
-import org.apache.maven.project.MavenProject;
-import org.apache.maven.project.ProjectBuilder;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -53,24 +49,19 @@ class DependencySetAssemblyPhaseTest {
     void setUp() {
         this.dependencyResolver = mock(DependencyResolver.class);
 
-        this.phase = new DependencySetAssemblyPhase(mock(ProjectBuilder.class), dependencyResolver);
+        this.phase = new DependencySetAssemblyPhase(dependencyResolver);
     }
 
     @Test
     void executeShouldAddOneDependencyFromProject() throws Exception {
         final String outputLocation = "/out";
 
-        final MavenProject project = newMavenProject("group", "project", "0");
-
-        Artifact artifact = mock(Artifact.class);
-        project.setArtifact(artifact);
-
         final DependencySet ds = new DependencySet();
         ds.setUseProjectArtifact(false);
         ds.setOutputDirectory(outputLocation);
         ds.setOutputFileNameMapping("${artifact.artifactId}");
         ds.setUnpack(false);
-        ds.setScope(Artifact.SCOPE_COMPILE);
+        ds.setScope(AssemblyArtifact.SCOPE_COMPILE);
         ds.setFileMode(Integer.toString(10, 8));
 
         final Assembly assembly = new Assembly();
@@ -78,8 +69,6 @@ class DependencySetAssemblyPhaseTest {
         assembly.setId("test");
         assembly.setIncludeBaseDirectory(false);
         assembly.addDependencySet(ds);
-
-        project.setArtifacts(Collections.singleton(artifact));
 
         when(dependencyResolver.resolveDependencySets(eq(assembly), isNull(), anyList()))
                 .thenReturn(new LinkedHashMap<>());
@@ -103,14 +92,5 @@ class DependencySetAssemblyPhaseTest {
 
         // result of easymock migration, should be assert of expected result instead of verifying methodcalls
         verify(dependencyResolver).resolveDependencySets(eq(assembly), isNull(), anyList());
-    }
-
-    private MavenProject newMavenProject(final String groupId, final String artifactId, final String version) {
-        final Model model = new Model();
-        model.setGroupId(groupId);
-        model.setArtifactId(artifactId);
-        model.setVersion(version);
-
-        return new MavenProject(model);
     }
 }

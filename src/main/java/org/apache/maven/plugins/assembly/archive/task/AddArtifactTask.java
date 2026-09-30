@@ -23,18 +23,19 @@ import java.io.IOException;
 import java.nio.charset.Charset;
 import java.util.List;
 
-import org.apache.maven.artifact.Artifact;
+import org.apache.maven.api.Project;
 import org.apache.maven.plugins.assembly.AssemblerConfigurationSource;
 import org.apache.maven.plugins.assembly.archive.ArchiveCreationException;
+import org.apache.maven.plugins.assembly.artifact.AssemblyArtifact;
 import org.apache.maven.plugins.assembly.format.AssemblyFormattingException;
 import org.apache.maven.plugins.assembly.utils.AssemblyFormatUtils;
 import org.apache.maven.plugins.assembly.utils.TypeConversionUtils;
-import org.apache.maven.project.MavenProject;
 import org.codehaus.plexus.archiver.Archiver;
 import org.codehaus.plexus.archiver.ArchiverException;
 import org.codehaus.plexus.archiver.util.DefaultArchivedFileSet;
 import org.codehaus.plexus.archiver.util.DefaultFileSet;
 import org.codehaus.plexus.components.io.functions.InputStreamTransformer;
+import org.codehaus.plexus.interpolation.fixed.FixedStringSearchInterpolator;
 import org.codehaus.plexus.util.FileUtils;
 import org.codehaus.plexus.util.StringUtils;
 import org.slf4j.Logger;
@@ -48,7 +49,7 @@ public class AddArtifactTask {
 
     public static final String[] DEFAULT_INCLUDES_ARRAY = {"**/*"};
 
-    private final Artifact artifact;
+    private AssemblyArtifact artifact;
 
     private final InputStreamTransformer transformer;
 
@@ -66,38 +67,41 @@ public class AddArtifactTask {
 
     private boolean usingDefaultExcludes = true;
 
-    private MavenProject project;
+    private Project project;
 
-    private MavenProject moduleProject;
+    private Project moduleProject;
 
-    private Artifact moduleArtifact;
+    private AssemblyArtifact moduleArtifact;
 
     private String outputDirectory;
 
     private String outputFileNameMapping;
 
-    public AddArtifactTask(final Artifact artifact, InputStreamTransformer transformer, Charset encoding) {
+    public AddArtifactTask(final AssemblyArtifact artifact, InputStreamTransformer transformer, Charset encoding) {
         this.artifact = artifact;
         this.transformer = transformer;
         this.encoding = encoding;
     }
 
-    public AddArtifactTask(final Artifact artifact, Charset encoding) {
+    public AddArtifactTask(final AssemblyArtifact artifact, Charset encoding) {
         this(artifact, null, encoding);
     }
 
     public void execute(final Archiver archiver, final AssemblerConfigurationSource configSource)
             throws ArchiveCreationException, AssemblyFormattingException {
         if (artifactIsArchiverDestination(archiver)) {
-            artifact.setFile(moveArtifactSomewhereElse(configSource));
+            artifact = artifact.withFile(moveArtifactSomewhereElse(configSource));
         }
 
         String destDirectory = AssemblyFormatUtils.getOutputDirectory(
                 outputDirectory,
                 configSource.getFinalName(),
                 configSource,
-                AssemblyFormatUtils.moduleProjectInterpolator(moduleProject),
-                AssemblyFormatUtils.artifactProjectInterpolator(project));
+                AssemblyFormatUtils.moduleProjectInterpolator(configSource.getSession(), moduleProject),
+                // the artifact itself stands in for the project when the POM of a dependency could not be built
+                FixedStringSearchInterpolator.create(
+                        AssemblyFormatUtils.artifactProjectInterpolator(configSource.getSession(), project),
+                        AssemblyFormatUtils.artifactInterpolator(artifact)));
 
         boolean fileModeSet = false;
         boolean dirModeSet = false;
@@ -140,8 +144,8 @@ public class AddArtifactTask {
                 configSource.getProject(),
                 moduleArtifact,
                 configSource,
-                AssemblyFormatUtils.moduleProjectInterpolator(moduleProject),
-                AssemblyFormatUtils.artifactProjectInterpolator(project));
+                AssemblyFormatUtils.moduleProjectInterpolator(configSource.getSession(), moduleProject),
+                AssemblyFormatUtils.artifactProjectInterpolator(configSource.getSession(), project));
 
         final String outputLocation = destDirectory + tempMapping;
 
@@ -214,8 +218,9 @@ public class AddArtifactTask {
         final File tempRoot = configSource.getTemporaryRootDirectory();
         final File tempArtifactFile = new File(tempRoot, artifact.getFile().getName());
 
-        LOGGER.warn("Artifact: " + artifact.getId() + " references the same file as the assembly destination file. "
-                + "Moving it to a temporary location for inclusion.");
+        LOGGER.warn(
+                "AssemblyArtifact: " + artifact.getId() + " references the same file as the assembly destination file. "
+                        + "Moving it to a temporary location for inclusion.");
         try {
             FileUtils.copyFile(artifact.getFile(), tempArtifactFile);
         } catch (final IOException e) {
@@ -256,7 +261,7 @@ public class AddArtifactTask {
         this.unpack = unpack;
     }
 
-    public void setProject(final MavenProject project) {
+    public void setProject(final Project project) {
         this.project = project;
     }
 
@@ -276,11 +281,11 @@ public class AddArtifactTask {
         setFileNameMapping(outputFileNameMapping == null ? defaultOutputFileNameMapping : outputFileNameMapping);
     }
 
-    public void setModuleProject(final MavenProject moduleProject) {
+    public void setModuleProject(final Project moduleProject) {
         this.moduleProject = moduleProject;
     }
 
-    public void setModuleArtifact(final Artifact moduleArtifact) {
+    public void setModuleArtifact(final AssemblyArtifact moduleArtifact) {
         this.moduleArtifact = moduleArtifact;
     }
 }

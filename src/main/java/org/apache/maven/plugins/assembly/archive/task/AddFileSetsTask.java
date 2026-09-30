@@ -24,6 +24,7 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 
+import org.apache.maven.api.Project;
 import org.apache.maven.plugins.assembly.AssemblerConfigurationSource;
 import org.apache.maven.plugins.assembly.archive.ArchiveCreationException;
 import org.apache.maven.plugins.assembly.format.AssemblyFormattingException;
@@ -32,7 +33,6 @@ import org.apache.maven.plugins.assembly.model.FileSet;
 import org.apache.maven.plugins.assembly.utils.AssemblyFileUtils;
 import org.apache.maven.plugins.assembly.utils.AssemblyFormatUtils;
 import org.apache.maven.plugins.assembly.utils.TypeConversionUtils;
-import org.apache.maven.project.MavenProject;
 import org.codehaus.plexus.archiver.Archiver;
 import org.codehaus.plexus.components.io.functions.InputStreamTransformer;
 import org.slf4j.Logger;
@@ -46,9 +46,9 @@ public class AddFileSetsTask {
 
     private final List<FileSet> fileSets;
 
-    private MavenProject project;
+    private Project project;
 
-    private MavenProject moduleProject;
+    private Project moduleProject;
 
     public AddFileSetsTask(final List<FileSet> fileSets) {
         this.fileSets = fileSets;
@@ -92,7 +92,7 @@ public class AddFileSetsTask {
             project = configSource.getProject();
         }
 
-        final File basedir = project.getBasedir();
+        final File basedir = project.getBasedir().toFile();
 
         String destDirectory = fileSet.getOutputDirectory();
 
@@ -106,8 +106,8 @@ public class AddFileSetsTask {
                 destDirectory,
                 configSource.getFinalName(),
                 configSource,
-                AssemblyFormatUtils.moduleProjectInterpolator(moduleProject),
-                AssemblyFormatUtils.artifactProjectInterpolator(project));
+                AssemblyFormatUtils.moduleProjectInterpolator(configSource.getSession(), moduleProject),
+                AssemblyFormatUtils.artifactProjectInterpolator(configSource.getSession(), project));
 
         if (LOGGER.isDebugEnabled()) {
             LOGGER.debug("FileSet[" + destDirectory + "]" + " dir perms: "
@@ -184,11 +184,11 @@ public class AddFileSetsTask {
         return fileSetDir;
     }
 
-    public void setProject(final MavenProject project) {
+    public void setProject(final Project project) {
         this.project = project;
     }
 
-    public void setModuleProject(final MavenProject moduleProject) {
+    public void setModuleProject(final Project moduleProject) {
         this.moduleProject = moduleProject;
     }
 }

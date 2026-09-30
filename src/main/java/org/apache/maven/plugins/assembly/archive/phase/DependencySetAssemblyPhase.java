@@ -18,25 +18,23 @@
  */
 package org.apache.maven.plugins.assembly.archive.phase;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
-
 import java.util.Collections;
 import java.util.Map;
 import java.util.Set;
 
-import org.apache.maven.artifact.Artifact;
+import org.apache.maven.api.di.Inject;
+import org.apache.maven.api.di.Named;
+import org.apache.maven.api.di.Singleton;
 import org.apache.maven.plugins.assembly.AssemblerConfigurationSource;
 import org.apache.maven.plugins.assembly.InvalidAssemblerConfigurationException;
 import org.apache.maven.plugins.assembly.archive.ArchiveCreationException;
 import org.apache.maven.plugins.assembly.archive.task.AddDependencySetsTask;
+import org.apache.maven.plugins.assembly.artifact.AssemblyArtifact;
 import org.apache.maven.plugins.assembly.artifact.DependencyResolutionException;
 import org.apache.maven.plugins.assembly.artifact.DependencyResolver;
 import org.apache.maven.plugins.assembly.format.AssemblyFormattingException;
 import org.apache.maven.plugins.assembly.model.Assembly;
 import org.apache.maven.plugins.assembly.model.DependencySet;
-import org.apache.maven.project.ProjectBuilder;
 import org.codehaus.plexus.archiver.Archiver;
 
 import static java.util.Objects.requireNonNull;
@@ -49,17 +47,13 @@ import static java.util.Objects.requireNonNull;
 @Singleton
 @Named("dependency-sets")
 public class DependencySetAssemblyPhase implements AssemblyArchiverPhase, PhaseOrder {
-    private final ProjectBuilder projectBuilder;
-
     private final DependencyResolver dependencyResolver;
 
     /**
      * Injected ctor.
      */
     @Inject
-    public DependencySetAssemblyPhase(
-            final ProjectBuilder projectBuilder, final DependencyResolver dependencyResolver) {
-        this.projectBuilder = requireNonNull(projectBuilder);
+    public DependencySetAssemblyPhase(final DependencyResolver dependencyResolver) {
         this.dependencyResolver = requireNonNull(dependencyResolver);
     }
 
@@ -72,14 +66,13 @@ public class DependencySetAssemblyPhase implements AssemblyArchiverPhase, PhaseO
             throws ArchiveCreationException, AssemblyFormattingException, InvalidAssemblerConfigurationException,
                     DependencyResolutionException {
 
-        Map<DependencySet, Set<Artifact>> resolved =
+        Map<DependencySet, Set<AssemblyArtifact>> resolved =
                 dependencyResolver.resolveDependencySets(assembly, configSource, assembly.getDependencySets());
-        for (Map.Entry<DependencySet, Set<Artifact>> dependencySetSetEntry : resolved.entrySet()) {
+        for (Map.Entry<DependencySet, Set<AssemblyArtifact>> dependencySetSetEntry : resolved.entrySet()) {
             final AddDependencySetsTask task = new AddDependencySetsTask(
                     Collections.singletonList(dependencySetSetEntry.getKey()),
                     dependencySetSetEntry.getValue(),
-                    configSource.getProject(),
-                    projectBuilder);
+                    configSource.getProject());
 
             task.execute(archiver, configSource);
         }

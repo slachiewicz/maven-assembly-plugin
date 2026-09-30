@@ -18,8 +18,7 @@
  */
 package org.apache.maven.plugins.assembly.filter;
 
-import javax.inject.Named;
-
+import org.apache.maven.api.di.Named;
 import org.codehaus.plexus.components.io.fileselectors.FileInfo;
 
 /**

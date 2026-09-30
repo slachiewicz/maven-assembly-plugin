@@ -30,9 +30,9 @@ import java.util.Properties;
 import java.util.Set;
 
 import org.apache.commons.io.IOUtils;
-import org.apache.maven.model.Model;
+import org.apache.maven.api.Project;
 import org.apache.maven.plugins.assembly.testutils.PojoConfigSource;
-import org.apache.maven.project.MavenProject;
+import org.apache.maven.plugins.assembly.testutils.TestStubs;
 import org.apache.maven.shared.filtering.DefaultMavenReaderFilter;
 import org.apache.maven.shared.filtering.MavenReaderFilter;
 import org.apache.maven.shared.filtering.MavenReaderFilterRequest;
@@ -123,13 +123,8 @@ class ReaderFormatterTest {
         assertSame(filteringRequest.getValue().getAdditionalProperties(), additionalProperties);
     }
 
-    private MavenProject createBasicMavenProject() {
-        final Model model = new Model();
-        model.setArtifactId("anArtifact");
-        model.setGroupId("group");
-        model.setVersion("version");
-
-        return new MavenProject(model);
+    private Project createBasicMavenProject() {
+        return TestStubs.project("group", "anArtifact", "version");
     }
 
     private String readResultStream(InputStream fud) throws IOException {

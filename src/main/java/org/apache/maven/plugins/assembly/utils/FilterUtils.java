@@ -27,79 +27,80 @@ import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Predicate;
 
-import org.apache.maven.artifact.Artifact;
-import org.apache.maven.artifact.resolver.filter.AndArtifactFilter;
-import org.apache.maven.artifact.resolver.filter.ArtifactFilter;
+import org.apache.maven.api.Dependency;
+import org.apache.maven.api.Project;
+import org.apache.maven.api.Session;
 import org.apache.maven.plugins.assembly.InvalidAssemblerConfigurationException;
-import org.apache.maven.project.MavenProject;
+import org.apache.maven.plugins.assembly.artifact.AssemblyArtifact;
+import org.apache.maven.plugins.assembly.functions.MavenProjects;
 import org.apache.maven.shared.artifact.filter.PatternExcludesArtifactFilter;
 import org.apache.maven.shared.artifact.filter.PatternIncludesArtifactFilter;
 import org.apache.maven.shared.artifact.filter.StatisticsReportingArtifactFilter;
-import org.apache.maven.shared.artifact.filter.resolve.ScopeFilter;
 import org.slf4j.Logger;
 
+/**
+ *
+ */
 public final class FilterUtils {
 
     private FilterUtils() {}
 
-    public static Set<MavenProject> filterProjects(
-            final Set<MavenProject> projects,
+    public static Set<Project> filterProjects(
+            final Session session,
+            final Set<Project> projects,
             final List<String> includes,
             final List<String> excludes,
             final boolean actTransitively,
             final Logger logger) {
-        final List<PatternIncludesArtifactFilter> allFilters = new ArrayList<>();
+        final List<StatisticsReportingArtifactFilter> allFilters = new ArrayList<>();
 
-        final AndArtifactFilter filter = new AndArtifactFilter();
+        final List<Predicate<AssemblyArtifact>> filter = new ArrayList<>();
 
         if (!includes.isEmpty()) {
-            final PatternIncludesArtifactFilter includeFilter =
-                    new PatternIncludesArtifactFilter(includes, actTransitively);
+            final TrailAwareIncludes includeFilter = new TrailAwareIncludes(includes, actTransitively);
 
-            filter.add(includeFilter);
+            filter.add(includeFilter::accept);
             allFilters.add(includeFilter);
         }
         if (!excludes.isEmpty()) {
-            final PatternExcludesArtifactFilter excludeFilter =
-                    new PatternExcludesArtifactFilter(excludes, actTransitively);
+            final TrailAwareExcludes excludeFilter = new TrailAwareExcludes(excludes, actTransitively);
 
-            filter.add(excludeFilter);
+            filter.add(excludeFilter::accept);
             allFilters.add(excludeFilter);
         }
 
-        Set<MavenProject> result = new LinkedHashSet<>(projects.size());
-        for (MavenProject project : projects) {
-            final Artifact artifact = project.getArtifact();
+        Set<Project> result = new LinkedHashSet<>(projects.size());
+        for (Project project : projects) {
+            final AssemblyArtifact artifact = MavenProjects.mainArtifact(session, project);
 
-            if (filter.include(artifact)) {
+            if (filter.stream().allMatch(f -> f.test(artifact))) {
                 result.add(project);
             }
         }
 
-        for (final PatternIncludesArtifactFilter f : allFilters) {
-            if (f != null) {
-                f.reportMissedCriteria(logger);
-            }
+        for (final StatisticsReportingArtifactFilter f : allFilters) {
+            f.reportMissedCriteria(logger);
         }
         return result;
     }
 
     public static void filterArtifacts(
-            final Set<Artifact> artifacts,
+            final Set<AssemblyArtifact> artifacts,
             final List<String> includes,
             final List<String> excludes,
             final boolean strictFiltering,
             final boolean actTransitively,
             final Logger logger,
-            final ArtifactFilter... additionalFilters)
+            @SuppressWarnings("unchecked") final Predicate<AssemblyArtifact>... additionalFilters)
             throws InvalidAssemblerConfigurationException {
-        final List<ArtifactFilter> allFilters = new ArrayList<>();
+        final List<StatisticsReportingArtifactFilter> allFilters = new ArrayList<>();
 
-        final AndArtifactFilter filter = new AndArtifactFilter();
+        final List<Predicate<AssemblyArtifact>> filter = new ArrayList<>();
 
         if (additionalFilters != null) {
-            for (final ArtifactFilter additionalFilter : additionalFilters) {
+            for (final Predicate<AssemblyArtifact> additionalFilter : additionalFilters) {
                 if (additionalFilter != null) {
                     filter.add(additionalFilter);
                 }
@@ -107,25 +108,25 @@ public final class FilterUtils {
         }
 
         if (!includes.isEmpty()) {
-            final ArtifactFilter includeFilter = new PatternIncludesArtifactFilter(includes, actTransitively);
+            final TrailAwareIncludes includeFilter = new TrailAwareIncludes(includes, actTransitively);
 
-            filter.add(includeFilter);
+            filter.add(includeFilter::accept);
 
             allFilters.add(includeFilter);
         }
 
         if (!excludes.isEmpty()) {
-            final ArtifactFilter excludeFilter = new PatternExcludesArtifactFilter(excludes, actTransitively);
+            final TrailAwareExcludes excludeFilter = new TrailAwareExcludes(excludes, actTransitively);
 
-            filter.add(excludeFilter);
+            filter.add(excludeFilter::accept);
 
             allFilters.add(excludeFilter);
         }
 
-        for (final Iterator<Artifact> it = artifacts.iterator(); it.hasNext(); ) {
-            final Artifact artifact = it.next();
+        for (final Iterator<AssemblyArtifact> it = artifacts.iterator(); it.hasNext(); ) {
+            final AssemblyArtifact artifact = it.next();
 
-            if (!filter.include(artifact)) {
+            if (!filter.stream().allMatch(f -> f.test(artifact))) {
                 it.remove();
 
                 if (logger.isDebugEnabled()) {
@@ -136,70 +137,186 @@ public final class FilterUtils {
 
         reportFilteringStatistics(allFilters, logger);
 
-        for (final ArtifactFilter f : allFilters) {
-            if (f instanceof StatisticsReportingArtifactFilter) {
-                final StatisticsReportingArtifactFilter sFilter = (StatisticsReportingArtifactFilter) f;
-
-                if (strictFiltering && sFilter.hasMissedCriteria()) {
-                    throw new InvalidAssemblerConfigurationException(
-                            "One or more filters had unmatched criteria. Check debug log for more information.");
-                }
+        for (final StatisticsReportingArtifactFilter f : allFilters) {
+            if (strictFiltering && f.hasMissedCriteria()) {
+                throw new InvalidAssemblerConfigurationException(
+                        "One or more filters had unmatched criteria. Check debug log for more information.");
             }
         }
     }
 
-    public static void reportFilteringStatistics(final Collection<ArtifactFilter> filters, final Logger logger) {
-        for (final ArtifactFilter f : filters) {
-            if (f instanceof StatisticsReportingArtifactFilter) {
-                final StatisticsReportingArtifactFilter sFilter = (StatisticsReportingArtifactFilter) f;
-
-                if (logger.isDebugEnabled()) {
-                    logger.debug("Statistics for " + sFilter + "\n");
-                }
-
-                sFilter.reportMissedCriteria(logger);
-                sFilter.reportFilteredArtifacts(logger);
+    public static void reportFilteringStatistics(
+            final Collection<? extends StatisticsReportingArtifactFilter> filters, final Logger logger) {
+        for (final StatisticsReportingArtifactFilter sFilter : filters) {
+            if (logger.isDebugEnabled()) {
+                logger.debug("Statistics for " + sFilter + "\n");
             }
+
+            sFilter.reportMissedCriteria(logger);
+            sFilter.reportFilteredArtifacts(logger);
         }
     }
 
-    /**
-     * Results in a filter including the rootScope and its transitive scopes
-     *
-     * @param rootScope the root scope
-     * @return the filter
-     */
-    public static ScopeFilter newScopeFilter(final String rootScope) {
+    public static Predicate<AssemblyArtifact> newScopeFilter(final String rootScope) {
         return newScopeFilter(Collections.singleton(rootScope));
     }
 
+    public static Predicate<AssemblyArtifact> newScopeFilter(final Collection<String> rootScopes) {
+        final Set<String> scopes = classpathScopes(rootScopes);
+
+        return artifact -> scopes.contains(artifact.getScope());
+    }
+
     /**
-     * Results in a filter including all rootScopes and their transitive scopes
-     *
-     * @param rootScopes all root scopes
-     * @return the filter
+     * The dependency scopes that end up on a classpath of the given scopes.
      */
-    public static ScopeFilter newScopeFilter(final Collection<String> rootScopes) {
+    public static Set<String> classpathScopes(final Collection<String> rootScopes) {
         Set<String> scopes = new HashSet<>();
 
         for (String rootScope : rootScopes) {
-            if (Artifact.SCOPE_COMPILE.equals(rootScope)) {
+            if (AssemblyArtifact.SCOPE_COMPILE.equals(rootScope)) {
                 scopes.addAll(Arrays.asList("compile", "provided", "system"));
             }
-            if (Artifact.SCOPE_PROVIDED.equals(rootScope)) {
+            if (AssemblyArtifact.SCOPE_PROVIDED.equals(rootScope)) {
                 scopes.add("provided");
             }
-            if (Artifact.SCOPE_RUNTIME.equals(rootScope)) {
+            if (AssemblyArtifact.SCOPE_RUNTIME.equals(rootScope)) {
                 scopes.addAll(Arrays.asList("compile", "runtime"));
             }
-            if (Artifact.SCOPE_SYSTEM.equals(rootScope)) {
+            if (AssemblyArtifact.SCOPE_SYSTEM.equals(rootScope)) {
                 scopes.add("system");
             }
-            if (Artifact.SCOPE_TEST.equals(rootScope)) {
+            if (AssemblyArtifact.SCOPE_TEST.equals(rootScope)) {
                 scopes.addAll(Arrays.asList("compile", "provided", "runtime", "system", "test"));
             }
         }
+        return scopes;
+    }
 
-        return ScopeFilter.including(scopes);
+    /**
+     * The pattern filters of maven-common-artifact-filters 4 no longer know about the dependency trail, which the
+     * Maven 3 {@code actTransitively} flag used to consult. This re-creates it on top of
+     * {@link PatternIncludesArtifactFilter#patternMatches(Dependency)}: the artifact is tried first, then every
+     * element of its trail (the project, the intermediate dependencies, the artifact itself) until a pattern matches.
+     * {@code patternMatches} cannot tell "no pattern matched" from "a negated pattern matched", so a second filter
+     * with a catch-all pattern appended is asked as well: it says {@code true} only if nothing matched before it.
+     */
+    private interface TrailAware {
+        boolean patternMatches(Dependency dependency);
+
+        boolean catchAllMatches(Dependency dependency);
+
+        boolean actTransitively();
+
+        default Boolean tryMatch(Dependency dependency) {
+            if (patternMatches(dependency)) {
+                return Boolean.TRUE;
+            }
+            return catchAllMatches(dependency) ? null : Boolean.FALSE;
+        }
+
+        default boolean matches(AssemblyArtifact artifact) {
+            Boolean match = tryMatch(artifact.toDependency());
+            if (match != null) {
+                return match;
+            }
+            if (actTransitively()) {
+                for (Dependency trailItem : artifact.getAncestors()) {
+                    match = tryMatch(trailItem);
+                    if (match != null) {
+                        return match;
+                    }
+                }
+            }
+            return false;
+        }
+    }
+
+    private static List<String> withCatchAll(List<String> patterns) {
+        List<String> all = new ArrayList<>(patterns);
+        all.add("*");
+        return all;
+    }
+
+    private static class TrailAwareIncludes extends PatternIncludesArtifactFilter implements TrailAware {
+        private final boolean actTransitively;
+
+        private final TrailAwareIncludes catchAll;
+
+        TrailAwareIncludes(List<String> patterns, boolean actTransitively) {
+            super(patterns);
+            this.actTransitively = actTransitively;
+            this.catchAll = new TrailAwareIncludes(withCatchAll(patterns));
+        }
+
+        private TrailAwareIncludes(List<String> patterns) {
+            super(patterns);
+            this.actTransitively = false;
+            this.catchAll = null;
+        }
+
+        boolean accept(AssemblyArtifact artifact) {
+            boolean shouldInclude = matches(artifact);
+            if (!shouldInclude) {
+                addFilteredArtifact(artifact.toDependency());
+            }
+            return shouldInclude;
+        }
+
+        @Override
+        public boolean patternMatches(Dependency dependency) {
+            return super.patternMatches(dependency);
+        }
+
+        @Override
+        public boolean catchAllMatches(Dependency dependency) {
+            return catchAll.patternMatches(dependency);
+        }
+
+        @Override
+        public boolean actTransitively() {
+            return actTransitively;
+        }
+    }
+
+    private static class TrailAwareExcludes extends PatternExcludesArtifactFilter implements TrailAware {
+        private final boolean actTransitively;
+
+        private final TrailAwareExcludes catchAll;
+
+        TrailAwareExcludes(List<String> patterns, boolean actTransitively) {
+            super(patterns);
+            this.actTransitively = actTransitively;
+            this.catchAll = new TrailAwareExcludes(withCatchAll(patterns));
+        }
+
+        private TrailAwareExcludes(List<String> patterns) {
+            super(patterns);
+            this.actTransitively = false;
+            this.catchAll = null;
+        }
+
+        boolean accept(AssemblyArtifact artifact) {
+            boolean shouldInclude = !matches(artifact);
+            if (!shouldInclude) {
+                addFilteredArtifact(artifact.toDependency());
+            }
+            return shouldInclude;
+        }
+
+        @Override
+        public boolean patternMatches(Dependency dependency) {
+            return super.patternMatches(dependency);
+        }
+
+        @Override
+        public boolean catchAllMatches(Dependency dependency) {
+            return catchAll.patternMatches(dependency);
+        }
+
+        @Override
+        public boolean actTransitively() {
+            return actTransitively;
+        }
     }
 }

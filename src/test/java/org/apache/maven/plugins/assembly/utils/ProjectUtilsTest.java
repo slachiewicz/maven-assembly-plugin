@@ -18,15 +18,16 @@
  */
 package org.apache.maven.plugins.assembly.utils;
 
-import java.io.File;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 
-import org.apache.maven.model.Model;
-import org.apache.maven.project.MavenProject;
+import org.apache.maven.api.Project;
+import org.apache.maven.api.model.Model;
+import org.apache.maven.plugins.assembly.testutils.TestStubs;
 import org.junit.jupiter.api.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,33 +40,26 @@ import static org.junit.jupiter.api.Assertions.fail;
 class ProjectUtilsTest {
     private final Logger logger = LoggerFactory.getLogger(getClass());
 
-    private MavenProject createTestProject(final String artifactId, final String groupId, final String version) {
-        final Model model = new Model();
-        model.setArtifactId(artifactId);
-        model.setGroupId(groupId);
-        model.setVersion(version);
+    private Project createTestProject(
+            final String artifactId, final String groupId, final String version, final String pom, String... modules) {
+        final Model model = TestStubs.model(groupId, artifactId, version)
+                .withModules(Collections.unmodifiableList(List.of(modules)));
 
-        return new MavenProject(model);
+        return TestStubs.project(model, pom == null ? null : Path.of(pom), null, "jar");
     }
 
     @Test
     void getProjectModulesShouldIncludeDirectModuleOfMasterProject() throws Exception {
-        final MavenProject master = createTestProject("test", "testGroup", "1.0");
+        final Project master = createTestProject("test", "testGroup", "1.0", "pom.xml", "module");
 
-        master.setFile(new File("pom.xml"));
+        final Project module = createTestProject("module", "testGroup", "1.0", "module/pom.xml");
 
-        master.getModel().addModule("module");
-
-        final MavenProject module = createTestProject("module", "testGroup", "1.0");
-
-        module.setFile(new File("module/pom.xml"));
-
-        final List<MavenProject> projects = new ArrayList<>(2);
+        final List<Project> projects = new ArrayList<>(2);
 
         projects.add(master);
         projects.add(module);
 
-        final Set<MavenProject> result = ProjectUtils.getProjectModules(master, projects, true, logger);
+        final Set<Project> result = ProjectUtils.getProjectModules(master, projects, true, logger);
 
         assertNotNull(result);
         assertEquals(1, result.size());
@@ -74,9 +68,9 @@ class ProjectUtilsTest {
 
     @Test
     void getProjectModulesShouldNotIncludeMasterProject() throws Exception {
-        final MavenProject master = createTestProject("test", "testGroup", "1.0");
+        final Project master = createTestProject("test", "testGroup", "1.0", null);
 
-        final Set<MavenProject> result =
+        final Set<Project> result =
                 ProjectUtils.getProjectModules(master, Collections.singletonList(master), true, logger);
 
         assertNotNull(result);
@@ -85,34 +79,25 @@ class ProjectUtilsTest {
 
     @Test
     void getProjectModulesShouldIncludeInDirectModuleOfMasterWhenIncludeSubModulesIsTrue() throws Exception {
-        final MavenProject master = createTestProject("test", "testGroup", "1.0");
+        final Project master = createTestProject("test", "testGroup", "1.0", "project/pom.xml", "module");
 
-        master.setFile(new File("project/pom.xml"));
+        final Project module = createTestProject("module", "testGroup", "1.0", "project/module/pom.xml", "submodule");
 
-        master.getModel().addModule("module");
+        final Project subModule =
+                createTestProject("sub-module", "testGroup", "1.0", "project/module/submodule/pom.xml");
 
-        final MavenProject module = createTestProject("module", "testGroup", "1.0");
-
-        module.getModel().addModule("submodule");
-
-        module.setFile(new File("project/module/pom.xml"));
-
-        final MavenProject subModule = createTestProject("sub-module", "testGroup", "1.0");
-
-        subModule.setFile(new File("project/module/submodule/pom.xml"));
-
-        final List<MavenProject> projects = new ArrayList<>(3);
+        final List<Project> projects = new ArrayList<>(3);
 
         projects.add(master);
         projects.add(module);
         projects.add(subModule);
 
-        final Set<MavenProject> result = ProjectUtils.getProjectModules(master, projects, true, logger);
+        final Set<Project> result = ProjectUtils.getProjectModules(master, projects, true, logger);
 
         assertNotNull(result);
         assertEquals(2, result.size());
 
-        final List<MavenProject> verify = new ArrayList<>(projects);
+        final List<Project> verify = new ArrayList<>(projects);
         verify.remove(master);
 
         verifyProjectsPresent(verify, result);
@@ -120,34 +105,25 @@ class ProjectUtilsTest {
 
     @Test
     void getProjectModulesShouldExcludeInDirectModuleOfMasterWhenIncludeSubModulesIsFalse() throws Exception {
-        final MavenProject master = createTestProject("test", "testGroup", "1.0");
+        final Project master = createTestProject("test", "testGroup", "1.0", "project/pom.xml", "module");
 
-        master.setFile(new File("project/pom.xml"));
+        final Project module = createTestProject("module", "testGroup", "1.0", "project/module/pom.xml", "submodule");
 
-        master.getModel().addModule("module");
+        final Project subModule =
+                createTestProject("sub-module", "testGroup", "1.0", "project/module/submodule/pom.xml");
 
-        final MavenProject module = createTestProject("module", "testGroup", "1.0");
-
-        module.getModel().addModule("submodule");
-
-        module.setFile(new File("project/module/pom.xml"));
-
-        final MavenProject subModule = createTestProject("sub-module", "testGroup", "1.0");
-
-        subModule.setFile(new File("project/module/submodule/pom.xml"));
-
-        final List<MavenProject> projects = new ArrayList<>(3);
+        final List<Project> projects = new ArrayList<>(3);
 
         projects.add(master);
         projects.add(module);
         projects.add(subModule);
 
-        final Set<MavenProject> result = ProjectUtils.getProjectModules(master, projects, false, logger);
+        final Set<Project> result = ProjectUtils.getProjectModules(master, projects, false, logger);
 
         assertNotNull(result);
         assertEquals(1, result.size());
 
-        final List<MavenProject> verify = new ArrayList<>(projects);
+        final List<Project> verify = new ArrayList<>(projects);
         verify.remove(master);
         verify.remove(subModule);
 
@@ -156,35 +132,31 @@ class ProjectUtilsTest {
 
     @Test
     void getProjectModulesShouldExcludeNonModuleOfMasterProject() throws Exception {
-        final MavenProject master = createTestProject("test", "testGroup", "1.0");
+        final Project master = createTestProject("test", "testGroup", "1.0", "project/pom.xml");
 
-        master.setFile(new File("project/pom.xml"));
+        final Project other = createTestProject("other", "testGroup", "1.0", "other/pom.xml");
 
-        final MavenProject other = createTestProject("other", "testGroup", "1.0");
-
-        other.setFile(new File("other/pom.xml"));
-
-        final List<MavenProject> projects = new ArrayList<>(3);
+        final List<Project> projects = new ArrayList<>(3);
 
         projects.add(master);
         projects.add(other);
 
-        final Set<MavenProject> result = ProjectUtils.getProjectModules(master, projects, true, logger);
+        final Set<Project> result = ProjectUtils.getProjectModules(master, projects, true, logger);
 
         assertNotNull(result);
         assertTrue(result.isEmpty());
     }
 
-    private void verifyProjectsPresent(final List<MavenProject> verify, final Set<MavenProject> result) {
-        final List<MavenProject> verifyCopy = new ArrayList<>(verify);
+    private void verifyProjectsPresent(final List<Project> verify, final Set<Project> result) {
+        final List<Project> verifyCopy = new ArrayList<>(verify);
 
-        final List<MavenProject> unexpected = new ArrayList<>();
+        final List<Project> unexpected = new ArrayList<>();
 
-        for (final MavenProject project : result) {
+        for (final Project project : result) {
             boolean removed = false;
 
-            for (final Iterator<MavenProject> verifyIterator = verifyCopy.iterator(); verifyIterator.hasNext(); ) {
-                final MavenProject verification = verifyIterator.next();
+            for (final Iterator<Project> verifyIterator = verifyCopy.iterator(); verifyIterator.hasNext(); ) {
+                final Project verification = verifyIterator.next();
 
                 if (verification.getId().equals(project.getId())) {
                     verifyIterator.remove();

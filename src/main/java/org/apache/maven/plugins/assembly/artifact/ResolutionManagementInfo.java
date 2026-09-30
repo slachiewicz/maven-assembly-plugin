@@ -21,8 +21,6 @@ package org.apache.maven.plugins.assembly.artifact;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
-import org.apache.maven.artifact.Artifact;
-
 /**
  * Helper class used to accumulate scopes and modules (with binaries included) that are used in an assembly, for the
  * purposes of creating an aggregated managed-version map with dependency version conflicts resolved.
@@ -30,21 +28,21 @@ import org.apache.maven.artifact.Artifact;
  * @author jdcasey
  */
 class ResolutionManagementInfo {
-    private final LinkedHashSet<Artifact> artifacts = new LinkedHashSet<>();
+    private final LinkedHashSet<AssemblyArtifact> artifacts = new LinkedHashSet<>();
 
-    Set<Artifact> getArtifacts() {
+    Set<AssemblyArtifact> getArtifacts() {
         return artifacts;
     }
 
-    void addArtifacts(final Set<Artifact> a) {
-        for (Artifact artifact : a) {
+    void addArtifacts(final Set<AssemblyArtifact> a) {
+        for (AssemblyArtifact artifact : a) {
             addOneArtifact(artifact);
         }
         artifacts.addAll(a);
     }
 
-    private void addOneArtifact(Artifact artifact) {
-        for (Artifact existing : artifacts) {
+    private void addOneArtifact(AssemblyArtifact artifact) {
+        for (AssemblyArtifact existing : artifacts) {
             if (existing.equals(artifact)) {
                 if (isScopeUpgrade(artifact, existing)) {
                     artifacts.remove(existing);
@@ -55,20 +53,20 @@ class ResolutionManagementInfo {
         }
     }
 
-    private boolean isScopeUpgrade(Artifact a, Artifact existing) {
+    private boolean isScopeUpgrade(AssemblyArtifact a, AssemblyArtifact existing) {
         return scopeValue(a.getScope()) > scopeValue(existing.getScope());
     }
 
     private int scopeValue(final String scope) {
-        if (Artifact.SCOPE_COMPILE.equals(scope)) {
+        if (AssemblyArtifact.SCOPE_COMPILE.equals(scope)) {
             return 5;
-        } else if (Artifact.SCOPE_PROVIDED.equals(scope)) {
+        } else if (AssemblyArtifact.SCOPE_PROVIDED.equals(scope)) {
             return 4;
-        } else if (Artifact.SCOPE_RUNTIME.equals(scope)) {
+        } else if (AssemblyArtifact.SCOPE_RUNTIME.equals(scope)) {
             return 3;
-        } else if (Artifact.SCOPE_SYSTEM.equals(scope)) {
+        } else if (AssemblyArtifact.SCOPE_SYSTEM.equals(scope)) {
             return 2;
-        } else if (Artifact.SCOPE_TEST.equals(scope)) {
+        } else if (AssemblyArtifact.SCOPE_TEST.equals(scope)) {
             return 1;
         }
         return 0;

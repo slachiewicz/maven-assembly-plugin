@@ -22,14 +22,13 @@ import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
 
-import org.apache.maven.artifact.Artifact;
-import org.apache.maven.artifact.handler.ArtifactHandler;
-import org.apache.maven.model.Model;
+import org.apache.maven.api.Project;
 import org.apache.maven.plugins.assembly.AssemblerConfigurationSource;
 import org.apache.maven.plugins.assembly.archive.DefaultAssemblyArchiverTest;
+import org.apache.maven.plugins.assembly.artifact.AssemblyArtifact;
 import org.apache.maven.plugins.assembly.model.DependencySet;
+import org.apache.maven.plugins.assembly.testutils.TestStubs;
 import org.apache.maven.plugins.assembly.utils.TypeConversionUtils;
-import org.apache.maven.project.MavenProject;
 import org.codehaus.plexus.archiver.ArchivedFileSet;
 import org.codehaus.plexus.archiver.Archiver;
 import org.junit.jupiter.api.AfterEach;
@@ -58,18 +57,13 @@ class AddArtifactTaskTest {
     @TempDir
     private File temporaryFolder;
 
-    private MavenProject mainProject;
+    private Project mainProject;
 
     private AssemblerConfigurationSource configSource;
 
     @BeforeEach
     void setUp() throws IOException {
-        Model model = new Model();
-        model.setGroupId("group");
-        model.setArtifactId("main");
-        model.setVersion("1000");
-
-        this.mainProject = new MavenProject(model);
+        this.mainProject = TestStubs.project("group", "main", "1000");
 
         this.configSource = mock(AssemblerConfigurationSource.class);
         when(configSource.getFinalName()).thenReturn("final-name");
@@ -79,17 +73,15 @@ class AddArtifactTaskTest {
     void tearDown() {
         // result of easymock migration, should be assert of expected result instead of verifying methodcalls
         verify(configSource, atLeastOnce()).getFinalName();
-        verify(configSource, atLeastOnce()).getMavenSession();
+        verify(configSource, atLeastOnce()).getSession();
     }
 
     @Test
     void shouldAddArchiveFileWithoutUnpacking() throws Exception {
         String outputLocation = "artifact";
 
-        Artifact artifact = mock(Artifact.class);
-        when(artifact.getGroupId()).thenReturn("GROUPID");
         File artifactFile = File.createTempFile("junit", null, temporaryFolder);
-        when(artifact.getFile()).thenReturn(artifactFile);
+        AssemblyArtifact artifact = TestStubs.artifact("GROUPID", "artifact", "1", "jar", "compile", artifactFile);
 
         final Archiver archiver = mock(Archiver.class);
         when(archiver.getOverrideDirectoryMode()).thenReturn(0222);
@@ -119,13 +111,10 @@ class AddArtifactTaskTest {
         String ext = "jar";
         String outputDir = "tmp/";
 
-        Artifact artifact = mock(Artifact.class);
-        ArtifactHandler artifactHandler = mock(ArtifactHandler.class);
-        when(artifact.getGroupId()).thenReturn("GROUPID");
-        when(artifactHandler.getExtension()).thenReturn(ext);
-        when(artifact.getArtifactHandler()).thenReturn(artifactHandler);
         File artifactFile = File.createTempFile("junit", null, temporaryFolder);
-        when(artifact.getFile()).thenReturn(artifactFile);
+        // the artifact id and version are left out so that the project's are used, as with the stub artifact of a POM
+        AssemblyArtifact artifact = new AssemblyArtifact(
+                null, "GROUPID", null, null, null, null, ext, ext, "compile", false, artifactFile, null, null);
 
         final Archiver archiver = mock(Archiver.class);
         when(archiver.getOverrideDirectoryMode()).thenReturn(0222);
@@ -140,12 +129,7 @@ class AddArtifactTaskTest {
         task.setOutputDirectory(outputDir);
         task.setFileNameMapping(new DependencySet().getOutputFileNameMapping());
 
-        Model model = new Model();
-        model.setArtifactId(artifactId);
-        model.setVersion(version);
-
-        MavenProject project = new MavenProject(model);
-        project.setGroupId("GROUPID");
+        Project project = TestStubs.project("GROUPID", artifactId, version);
         task.setProject(project);
 
         task.execute(archiver, configSource);
@@ -159,7 +143,7 @@ class AddArtifactTaskTest {
         verify(archiver).addFile(artifactFile, outputDir + artifactId + "-" + version + "." + ext);
     }
 
-    private AddArtifactTask createTask(Artifact artifact) {
+    private AddArtifactTask createTask(AssemblyArtifact artifact) {
         AddArtifactTask task = new AddArtifactTask(artifact, null);
 
         task.setFileNameMapping("artifact");
@@ -179,8 +163,8 @@ class AddArtifactTaskTest {
 
         DefaultAssemblyArchiverTest.setupInterpolators(configSource, mainProject);
 
-        Artifact artifact = mock(Artifact.class);
-        when(artifact.getFile()).thenReturn(File.createTempFile("junit", null, temporaryFolder));
+        AssemblyArtifact artifact = TestStubs.artifact(
+                "group", "artifact", "1", "jar", "compile", File.createTempFile("junit", null, temporaryFolder));
 
         AddArtifactTask task = createTask(artifact);
         task.setUnpack(true);
@@ -208,8 +192,8 @@ class AddArtifactTaskTest {
 
         DefaultAssemblyArchiverTest.setupInterpolators(configSource, mainProject);
 
-        Artifact artifact = mock(Artifact.class);
-        when(artifact.getFile()).thenReturn(File.createTempFile("junit", null, temporaryFolder));
+        AssemblyArtifact artifact = TestStubs.artifact(
+                "group", "artifact", "1", "jar", "compile", File.createTempFile("junit", null, temporaryFolder));
 
         AddArtifactTask task = createTask(artifact);
         task.setUnpack(true);
@@ -242,8 +226,8 @@ class AddArtifactTaskTest {
         String[] includes = {"**/*.txt"};
         String[] excludes = {"**/README.txt"};
 
-        Artifact artifact = mock(Artifact.class);
-        when(artifact.getFile()).thenReturn(File.createTempFile("junit", null, temporaryFolder));
+        AssemblyArtifact artifact = TestStubs.artifact(
+                "group", "artifact", "1", "jar", "compile", File.createTempFile("junit", null, temporaryFolder));
 
         DefaultAssemblyArchiverTest.setupInterpolators(configSource, mainProject);
 

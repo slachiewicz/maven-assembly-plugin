@@ -18,8 +18,6 @@
  */
 package org.apache.maven.plugins.assembly.filter;
 
-import javax.inject.Named;
-
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -35,6 +33,7 @@ import java.util.Date;
 import java.util.List;
 
 import org.apache.commons.io.IOUtils;
+import org.apache.maven.api.di.Named;
 import org.apache.maven.plugins.assembly.utils.AssemblyFileUtils;
 import org.codehaus.plexus.archiver.Archiver;
 import org.codehaus.plexus.archiver.ArchiverException;

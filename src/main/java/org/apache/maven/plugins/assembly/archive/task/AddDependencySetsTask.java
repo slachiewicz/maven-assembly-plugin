@@ -26,30 +26,29 @@ import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Predicate;
 
-import org.apache.maven.artifact.Artifact;
-import org.apache.maven.artifact.resolver.filter.ArtifactFilter;
-import org.apache.maven.model.Dependency;
-import org.apache.maven.model.Model;
-import org.apache.maven.model.building.ModelBuildingRequest;
+import org.apache.maven.api.ArtifactCoordinates;
+import org.apache.maven.api.DependencyCoordinates;
+import org.apache.maven.api.Project;
+import org.apache.maven.api.RemoteRepository;
+import org.apache.maven.api.Session;
+import org.apache.maven.api.services.ProjectBuilder;
+import org.apache.maven.api.services.ProjectBuilderRequest;
+import org.apache.maven.api.services.ProjectBuilderResult;
+import org.apache.maven.api.services.ProjectManager;
 import org.apache.maven.plugins.assembly.AssemblerConfigurationSource;
 import org.apache.maven.plugins.assembly.InvalidAssemblerConfigurationException;
 import org.apache.maven.plugins.assembly.archive.ArchiveCreationException;
+import org.apache.maven.plugins.assembly.artifact.AssemblyArtifact;
 import org.apache.maven.plugins.assembly.format.AssemblyFormattingException;
 import org.apache.maven.plugins.assembly.format.ReaderFormatter;
+import org.apache.maven.plugins.assembly.functions.MavenProjects;
 import org.apache.maven.plugins.assembly.model.DependencySet;
 import org.apache.maven.plugins.assembly.model.UnpackOptions;
 import org.apache.maven.plugins.assembly.utils.AssemblyFormatUtils;
 import org.apache.maven.plugins.assembly.utils.FilterUtils;
 import org.apache.maven.plugins.assembly.utils.TypeConversionUtils;
-import org.apache.maven.project.DefaultProjectBuildingRequest;
-import org.apache.maven.project.MavenProject;
-import org.apache.maven.project.ProjectBuilder;
-import org.apache.maven.project.ProjectBuildingException;
-import org.apache.maven.project.ProjectBuildingRequest;
-import org.apache.maven.project.ProjectBuildingResult;
-import org.apache.maven.shared.artifact.filter.resolve.ScopeFilter;
-import org.apache.maven.shared.artifact.filter.resolve.transform.ArtifactIncludeFilterTransformer;
 import org.codehaus.plexus.archiver.Archiver;
 import org.codehaus.plexus.archiver.ArchiverException;
 import org.codehaus.plexus.components.io.functions.InputStreamTransformer;
@@ -75,29 +74,25 @@ public class AddDependencySetsTask {
 
     private final List<DependencySet> dependencySets;
 
-    private final MavenProject project;
+    private final Project project;
 
-    private final ProjectBuilder projectBuilder1;
+    private final Set<AssemblyArtifact> resolvedArtifacts;
 
-    private final Set<Artifact> resolvedArtifacts;
-
-    private MavenProject moduleProject;
+    private Project moduleProject;
 
     private String defaultOutputDirectory;
 
     private String defaultOutputFileNameMapping;
 
-    private Artifact moduleArtifact;
+    private AssemblyArtifact moduleArtifact;
 
     public AddDependencySetsTask(
             final List<DependencySet> dependencySets,
-            final Set<Artifact> resolvedArtifacts,
-            final MavenProject project,
-            ProjectBuilder projectBuilder) {
+            final Set<AssemblyArtifact> resolvedArtifacts,
+            final Project project) {
         this.dependencySets = dependencySets;
         this.resolvedArtifacts = resolvedArtifacts;
         this.project = project;
-        this.projectBuilder1 = projectBuilder;
     }
 
     public void execute(final Archiver archiver, final AssemblerConfigurationSource configSource)
@@ -107,7 +102,7 @@ public class AddDependencySetsTask {
             return;
         }
 
-        final List<Dependency> deps = project.getDependencies();
+        final List<DependencyCoordinates> deps = project.getDependencies();
         if ((deps == null) || deps.isEmpty()) {
             LOGGER.debug("Project " + project.getId() + " has no dependencies. Skipping dependency set addition.");
         }
@@ -127,7 +122,8 @@ public class AddDependencySetsTask {
                     + "AND useTransitiveFiltering == true. Transitive filtering flag will be ignored.");
         }
 
-        final Set<Artifact> dependencyArtifacts = resolveDependencyArtifacts(dependencySet);
+        final Set<AssemblyArtifact> dependencyArtifacts =
+                resolveDependencyArtifacts(configSource.getSession(), dependencySet);
 
         if (!unpackTransformsContent(dependencySet) && dependencyArtifacts.size() > 1) {
             checkMultiArtifactOutputConfig(dependencySet);
@@ -144,17 +140,15 @@ public class AddDependencySetsTask {
                         unpackOptions.getLineEnding())
                 : null;
 
-        for (final Artifact depArtifact : dependencyArtifacts) {
-            ProjectBuildingRequest pbr = getProjectBuildingRequest(configSource);
-            MavenProject depProject;
+        for (final AssemblyArtifact depArtifact : dependencyArtifacts) {
+            Project depProject;
             try {
-                ProjectBuildingResult build = projectBuilder1.build(depArtifact, pbr);
-                depProject = build.getProject();
-            } catch (final ProjectBuildingException e) {
+                depProject = buildProject(configSource.getSession(), depArtifact);
+            } catch (final RuntimeException e) {
                 LOGGER.debug("Error retrieving POM of module-dependency: " + depArtifact.getId() + "; Reason: "
-                        + e.getMessage() + "\n\nBuilding stub project instance.");
+                        + e.getMessage() + "\n\nContinuing without a project instance.");
 
-                depProject = buildProjectStub(depArtifact);
+                depProject = null;
             }
 
             if (NON_ARCHIVE_DEPENDENCY_TYPES.contains(depArtifact.getType())) {
@@ -165,11 +159,24 @@ public class AddDependencySetsTask {
         }
     }
 
-    private ProjectBuildingRequest getProjectBuildingRequest(AssemblerConfigurationSource configSource) {
-        return new DefaultProjectBuildingRequest(configSource.getMavenSession().getProjectBuildingRequest())
-                .setRemoteRepositories(project.getRemoteArtifactRepositories())
-                .setValidationLevel(ModelBuildingRequest.VALIDATION_LEVEL_MINIMAL)
-                .setProcessPlugins(false);
+    /**
+     * Builds the project of a dependency from its POM, as the Maven 3 {@code ProjectBuilder.build(Artifact, ...)}
+     * did. The Maven 4 builder takes a POM file, so the POM is resolved first.
+     */
+    private Project buildProject(Session session, AssemblyArtifact depArtifact) {
+        final List<RemoteRepository> repositories =
+                session.getService(ProjectManager.class).getRemoteProjectRepositories(project);
+        final ArtifactCoordinates pomCoordinates = session.createArtifactCoordinates(
+                depArtifact.getGroupId(), depArtifact.getArtifactId(), depArtifact.getBaseVersion(), "pom");
+        final ProjectBuilderRequest request = ProjectBuilderRequest.builder()
+                .session(session)
+                .path(session.resolveArtifact(pomCoordinates, repositories).getPath())
+                .processPlugins(false)
+                .repositories(repositories)
+                .build();
+        final ProjectBuilderResult result =
+                session.getService(ProjectBuilder.class).build(request);
+        return result.getProject().orElse(null);
     }
 
     private boolean isUnpackWithOptions(DependencySet dependencySet) {
@@ -205,8 +212,8 @@ public class AddDependencySetsTask {
 
     private void addNormalArtifact(
             final DependencySet dependencySet,
-            final Artifact depArtifact,
-            final MavenProject depProject,
+            final AssemblyArtifact depArtifact,
+            final Project depProject,
             final Archiver archiver,
             final AssemblerConfigurationSource configSource,
             InputStreamTransformer fileSetTransformers)
@@ -247,31 +254,16 @@ public class AddDependencySetsTask {
         task.execute(archiver, configSource);
     }
 
-    private MavenProject buildProjectStub(final Artifact depArtifact) {
-        final Model model = new Model();
-        model.setGroupId(depArtifact.getGroupId());
-        model.setArtifactId(depArtifact.getArtifactId());
-        model.setVersion(depArtifact.getBaseVersion());
-        model.setPackaging(depArtifact.getType());
-
-        model.setDescription("Stub for " + depArtifact.getId());
-
-        final MavenProject project = new MavenProject(model);
-        project.setArtifact(depArtifact);
-
-        return project;
-    }
-
-    Set<Artifact> resolveDependencyArtifacts(final DependencySet dependencySet)
+    Set<AssemblyArtifact> resolveDependencyArtifacts(final Session session, final DependencySet dependencySet)
             throws InvalidAssemblerConfigurationException {
-        final Set<Artifact> dependencyArtifacts = new LinkedHashSet<>();
+        final Set<AssemblyArtifact> dependencyArtifacts = new LinkedHashSet<>();
         if (resolvedArtifacts != null) {
             dependencyArtifacts.addAll(resolvedArtifacts);
         }
 
         if (dependencySet.isUseProjectArtifact()) {
-            final Artifact projectArtifact = project.getArtifact();
-            if ((projectArtifact != null) && (projectArtifact.getFile() != null)) {
+            final AssemblyArtifact projectArtifact = MavenProjects.mainArtifact(session, project);
+            if (projectArtifact.getFile() != null) {
                 dependencyArtifacts.add(projectArtifact);
             } else {
                 LOGGER.warn("Cannot include project artifact: " + projectArtifact
@@ -280,9 +272,9 @@ public class AddDependencySetsTask {
         }
 
         if (dependencySet.isUseProjectAttachments()) {
-            final List<Artifact> attachments = project.getAttachedArtifacts();
+            final List<AssemblyArtifact> attachments = MavenProjects.attachedArtifacts(session, project);
             if (attachments != null) {
-                for (final Artifact attachment : attachments) {
+                for (final AssemblyArtifact attachment : attachments) {
                     if (attachment.getFile() != null) {
                         dependencyArtifacts.add(attachment);
                     } else {
@@ -299,9 +291,7 @@ public class AddDependencySetsTask {
             LOGGER.debug("Filtering dependency artifacts WITHOUT transitive dependency path information.");
         }
 
-        final ScopeFilter scopeFilter = FilterUtils.newScopeFilter(dependencySet.getScope());
-
-        final ArtifactFilter filter = new ArtifactIncludeFilterTransformer().transform(scopeFilter);
+        final Predicate<AssemblyArtifact> filter = FilterUtils.newScopeFilter(dependencySet.getScope());
 
         FilterUtils.filterArtifacts(
                 dependencyArtifacts,
@@ -316,8 +306,8 @@ public class AddDependencySetsTask {
     }
 
     private void addNonArchiveDependency(
-            final Artifact depArtifact,
-            final MavenProject depProject,
+            final AssemblyArtifact depArtifact,
+            final Project depProject,
             final DependencySet dependencySet,
             final Archiver archiver,
             final AssemblerConfigurationSource configSource)
@@ -327,12 +317,14 @@ public class AddDependencySetsTask {
         String outputDirectory = dependencySet.getOutputDirectory();
 
         FixedStringSearchInterpolator moduleProjectInterpolator =
-                AssemblyFormatUtils.moduleProjectInterpolator(moduleProject);
-        FixedStringSearchInterpolator artifactProjectInterpolator =
-                AssemblyFormatUtils.artifactProjectInterpolator(depProject);
+                AssemblyFormatUtils.moduleProjectInterpolator(configSource.getSession(), moduleProject);
+        // the artifact itself stands in for the project when the POM of a dependency could not be built
+        FixedStringSearchInterpolator artifactProjectInterpolator = FixedStringSearchInterpolator.create(
+                AssemblyFormatUtils.artifactProjectInterpolator(configSource.getSession(), depProject),
+                AssemblyFormatUtils.artifactInterpolator(depArtifact));
         outputDirectory = AssemblyFormatUtils.getOutputDirectory(
                 outputDirectory,
-                depProject.getBuild().getFinalName(),
+                depProject == null ? null : depProject.getBuild().getFinalName(),
                 configSource,
                 moduleProjectInterpolator,
                 artifactProjectInterpolator);
@@ -379,11 +371,11 @@ public class AddDependencySetsTask {
         this.defaultOutputFileNameMapping = defaultOutputFileNameMapping;
     }
 
-    public void setModuleProject(final MavenProject moduleProject) {
+    public void setModuleProject(final Project moduleProject) {
         this.moduleProject = moduleProject;
     }
 
-    public void setModuleArtifact(final Artifact moduleArtifact) {
+    public void setModuleArtifact(final AssemblyArtifact moduleArtifact) {
         this.moduleArtifact = moduleArtifact;
     }
 }

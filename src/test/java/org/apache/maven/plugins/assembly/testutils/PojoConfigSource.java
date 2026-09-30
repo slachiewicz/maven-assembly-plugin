@@ -22,12 +22,11 @@ import java.io.File;
 import java.util.List;
 import java.util.Properties;
 
-import org.apache.maven.archiver.MavenArchiveConfiguration;
-import org.apache.maven.artifact.repository.ArtifactRepository;
-import org.apache.maven.execution.MavenSession;
+import org.apache.maven.api.Project;
+import org.apache.maven.api.Session;
 import org.apache.maven.plugins.assembly.AssemblerConfigurationSource;
 import org.apache.maven.plugins.assembly.model.Assembly;
-import org.apache.maven.project.MavenProject;
+import org.apache.maven.shared.archiver.MavenArchiveConfiguration;
 import org.apache.maven.shared.filtering.MavenReaderFilter;
 import org.codehaus.plexus.interpolation.fixed.FixedStringSearchInterpolator;
 
@@ -36,7 +35,7 @@ public class PojoConfigSource implements AssemblerConfigurationSource {
 
     private File basedir;
 
-    private MavenProject mavenProject;
+    private Project mavenProject;
 
     private boolean isSitencluded;
 
@@ -80,8 +79,6 @@ public class PojoConfigSource implements AssemblerConfigurationSource {
 
     private File descriptorSourceReference;
 
-    private ArtifactRepository localRepository;
-
     private File temporaryRootDirectory;
 
     private File archiveBaseDirectory;
@@ -92,9 +89,7 @@ public class PojoConfigSource implements AssemblerConfigurationSource {
 
     private boolean isIncludeProjectBuildFilter;
 
-    private List<MavenProject> reactorProjects;
-
-    private List<ArtifactRepository> remoteRepository;
+    private List<Project> reactorProjects;
 
     private boolean isDryRun;
 
@@ -102,7 +97,7 @@ public class PojoConfigSource implements AssemblerConfigurationSource {
 
     private boolean isIgnoreMissingDescriptor;
 
-    private MavenSession mavenSession;
+    private Session mavenSession;
 
     private FixedStringSearchInterpolator rootInterpolator = FixedStringSearchInterpolator.empty();
 
@@ -158,7 +153,7 @@ public class PojoConfigSource implements AssemblerConfigurationSource {
         this.basedir = basedir;
     }
 
-    public MavenProject getProject() {
+    public Project getProject() {
         return mavenProject;
     }
 
@@ -230,14 +225,6 @@ public class PojoConfigSource implements AssemblerConfigurationSource {
         this.jarArchiveConfiguration = jarArchiveConfiguration;
     }
 
-    public ArtifactRepository getLocalRepository() {
-        return localRepository;
-    }
-
-    public void setLocalRepository(ArtifactRepository localRepository) {
-        this.localRepository = localRepository;
-    }
-
     public File getTemporaryRootDirectory() {
         return temporaryRootDirectory;
     }
@@ -275,16 +262,12 @@ public class PojoConfigSource implements AssemblerConfigurationSource {
         return isIncludeProjectBuildFilter;
     }
 
-    public List<MavenProject> getReactorProjects() {
+    public List<Project> getReactorProjects() {
         return reactorProjects;
     }
 
-    public void setReactorProjects(List<MavenProject> reactorProjects) {
+    public void setReactorProjects(List<Project> reactorProjects) {
         this.reactorProjects = reactorProjects;
-    }
-
-    public List<ArtifactRepository> getRemoteRepositories() {
-        return remoteRepository;
     }
 
     public boolean isDryRun() {
@@ -311,11 +294,11 @@ public class PojoConfigSource implements AssemblerConfigurationSource {
         this.isIgnoreMissingDescriptor = isIgnoreMissingDescriptor;
     }
 
-    public MavenSession getMavenSession() {
+    public Session getSession() {
         return mavenSession;
     }
 
-    public void setMavenSession(MavenSession mavenSession) {
+    public void setSession(Session mavenSession) {
         this.mavenSession = mavenSession;
     }
 
@@ -383,7 +366,7 @@ public class PojoConfigSource implements AssemblerConfigurationSource {
         this.delimiters = delimiters;
     }
 
-    public void setMavenProject(MavenProject mavenProject) {
+    public void setMavenProject(Project mavenProject) {
         this.mavenProject = mavenProject;
     }
 
@@ -401,10 +384,6 @@ public class PojoConfigSource implements AssemblerConfigurationSource {
 
     public void setIncludeProjectBuildFilter(boolean isIncludeProjectBuildFilter) {
         this.isIncludeProjectBuildFilter = isIncludeProjectBuildFilter;
-    }
-
-    public void setRemoteRepository(List<ArtifactRepository> remoteRepository) {
-        this.remoteRepository = remoteRepository;
     }
 
     public FixedStringSearchInterpolator getRepositoryInterpolator() {

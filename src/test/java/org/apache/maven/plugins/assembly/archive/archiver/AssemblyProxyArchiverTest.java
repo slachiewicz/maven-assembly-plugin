@@ -154,7 +154,7 @@ class AssemblyProxyArchiverTest {
         Files.write(
                 dir.toPath().resolve("file.txt"), Collections.singletonList("This is a test."), StandardCharsets.UTF_8);
 
-        archiver.addDirectory(dir);
+        archiver.addFileSet(DefaultFileSet.fileSet(dir));
 
         archiver.createArchive();
 
