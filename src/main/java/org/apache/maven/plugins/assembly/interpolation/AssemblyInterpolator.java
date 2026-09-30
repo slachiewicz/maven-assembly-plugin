@@ -24,12 +24,12 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+import org.apache.maven.api.Project;
 import org.apache.maven.plugins.assembly.AssemblerConfigurationSource;
 import org.apache.maven.plugins.assembly.model.io.xpp3.AssemblyXpp3Reader;
 import org.apache.maven.plugins.assembly.model.io.xpp3.ComponentXpp3Reader;
 import org.apache.maven.plugins.assembly.resolved.AssemblyId;
 import org.apache.maven.plugins.assembly.utils.AssemblyFileUtils;
-import org.apache.maven.project.MavenProject;
 import org.codehaus.plexus.interpolation.InterpolationPostProcessor;
 import org.codehaus.plexus.interpolation.fixed.FixedStringSearchInterpolator;
 import org.codehaus.plexus.interpolation.fixed.InterpolationState;
@@ -119,7 +119,7 @@ public class AssemblyInterpolator {
     }
 
     public static FixedStringSearchInterpolator fullInterpolator(
-            final MavenProject project,
+            final Project project,
             final FixedStringSearchInterpolator projectIp,
             final AssemblerConfigurationSource configSource) {
         FixedStringSearchInterpolator fixedStringSearchInterpolator = FixedStringSearchInterpolator.create(
@@ -127,7 +127,8 @@ public class AssemblyInterpolator {
                 configSource.getCommandLinePropsInterpolator(),
                 configSource.getEnvInterpolator(),
                 projectIp);
-        return fixedStringSearchInterpolator.withPostProcessor(new PathTranslatingPostProcessor(project.getBasedir()));
+        return fixedStringSearchInterpolator.withPostProcessor(
+                new PathTranslatingPostProcessor(project.getBasedir().toFile()));
     }
 
     private static final class PathTranslatingPostProcessor implements InterpolationPostProcessor {

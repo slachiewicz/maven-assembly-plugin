@@ -24,17 +24,14 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import org.apache.maven.model.Model;
+import org.apache.maven.api.Project;
 import org.apache.maven.plugins.assembly.AssemblerConfigurationSource;
 import org.apache.maven.plugins.assembly.InvalidAssemblerConfigurationException;
 import org.apache.maven.plugins.assembly.archive.phase.AssemblyArchiverPhase;
 import org.apache.maven.plugins.assembly.model.Assembly;
 import org.apache.maven.plugins.assembly.mojos.AbstractAssemblyMojo;
 import org.apache.maven.plugins.assembly.testutils.PojoConfigSource;
-import org.apache.maven.project.MavenProject;
-import org.codehaus.plexus.DefaultPlexusContainer;
-import org.codehaus.plexus.PlexusContainer;
-import org.codehaus.plexus.PlexusContainerException;
+import org.apache.maven.plugins.assembly.testutils.TestStubs;
 import org.codehaus.plexus.archiver.Archiver;
 import org.codehaus.plexus.archiver.ArchiverException;
 import org.codehaus.plexus.archiver.diags.NoOpArchiver;
@@ -45,7 +42,6 @@ import org.codehaus.plexus.archiver.tar.TarLongFileMode;
 import org.codehaus.plexus.archiver.war.WarArchiver;
 import org.codehaus.plexus.archiver.zip.ZipArchiver;
 import org.codehaus.plexus.build.BuildContext;
-import org.codehaus.plexus.component.configurator.BasicComponentConfigurator;
 import org.codehaus.plexus.interpolation.fixed.FixedStringSearchInterpolator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -77,10 +73,6 @@ public class DefaultAssemblyArchiverTest {
 
     private ArchiverManager archiverManager;
 
-    private PlexusContainer container;
-
-    private BasicComponentConfigurator configurator;
-
     private BuildContext buildContext;
 
     public static void setupInterpolators(AssemblerConfigurationSource configSource) {
@@ -89,18 +81,18 @@ public class DefaultAssemblyArchiverTest {
         when(configSource.getEnvInterpolator()).thenReturn(FixedStringSearchInterpolator.create());
     }
 
-    public static void setupInterpolators(AssemblerConfigurationSource configSource, MavenProject mavenProject) {
+    public static void setupInterpolators(AssemblerConfigurationSource configSource, Project mavenProject) {
+        // computed first: it reads the project mock, which must not happen in the middle of a stubbing
+        final FixedStringSearchInterpolator mainProjectInterpolator =
+                AbstractAssemblyMojo.mainProjectInterpolator(mavenProject);
         when(configSource.getCommandLinePropsInterpolator()).thenReturn(FixedStringSearchInterpolator.create());
         when(configSource.getEnvInterpolator()).thenReturn(FixedStringSearchInterpolator.create());
-        when(configSource.getMainProjectInterpolator())
-                .thenReturn(AbstractAssemblyMojo.mainProjectInterpolator(mavenProject));
+        when(configSource.getMainProjectInterpolator()).thenReturn(mainProjectInterpolator);
     }
 
     @BeforeEach
-    void setup() throws PlexusContainerException {
+    void setup() throws Exception {
         this.archiverManager = mock(ArchiverManager.class);
-        this.container = new DefaultPlexusContainer();
-        this.configurator = new BasicComponentConfigurator();
         this.buildContext = mock(BuildContext.class);
     }
 
@@ -182,7 +174,7 @@ public class DefaultAssemblyArchiverTest {
         when(configSource.getArchiverConfig())
                 .thenReturn("<configuration><simpleConfig>" + simpleConfig + "</simpleConfig></configuration>");
 
-        final MavenProject project = new MavenProject(new Model());
+        final Project project = TestStubs.project("group", "artifact", "1.0");
 
         when(configSource.getProject()).thenReturn(project);
         when(configSource.getWorkingDirectory()).thenReturn(new File("."));
@@ -253,7 +245,8 @@ public class DefaultAssemblyArchiverTest {
         when(configSource.getOverrideGroupName()).thenReturn("root");
         when(configSource.getOverrideUid()).thenReturn(0);
         when(configSource.getOverrideUserName()).thenReturn("root");
-        when(configSource.getProject()).thenReturn(new MavenProject(new Model()));
+        final Project stubProject = TestStubs.project("group", "artifact", "1.0");
+        when(configSource.getProject()).thenReturn(stubProject);
         when(configSource.getWorkingDirectory()).thenReturn(new File("."));
         when(configSource.isIgnorePermissions()).thenReturn(true);
         when(configSource.isRecompressZippedFiles()).thenReturn(false);
@@ -268,7 +261,7 @@ public class DefaultAssemblyArchiverTest {
         // result of easymock migration, should be assert of expected result instead of verifying methodcalls
         verify(configSource).getArchiverConfig();
         verify(configSource).getJarArchiveConfiguration();
-        verify(configSource).getMavenSession();
+        verify(configSource).getSession();
         verify(configSource, times(2)).getOverrideGid();
         verify(configSource, times(2)).getOverrideGroupName();
         verify(configSource, times(2)).getOverrideUid();
@@ -357,8 +350,7 @@ public class DefaultAssemblyArchiverTest {
     }
 
     private DefaultAssemblyArchiver createSubject(final List<AssemblyArchiverPhase> phases) {
-        return new DefaultAssemblyArchiver(
-                archiverManager, phases, Collections.emptyMap(), container, configurator, buildContext);
+        return new DefaultAssemblyArchiver(archiverManager, phases, Collections::emptyMap, buildContext);
     }
 
     private static final class TestTarArchiver extends TarArchiver {

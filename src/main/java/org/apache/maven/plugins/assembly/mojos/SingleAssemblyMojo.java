@@ -18,20 +18,12 @@
  */
 package org.apache.maven.plugins.assembly.mojos;
 
-import javax.inject.Inject;
-
-import org.apache.maven.plugin.MojoExecutionException;
-import org.apache.maven.plugin.MojoFailureException;
-import org.apache.maven.plugin.descriptor.PluginDescriptor;
-import org.apache.maven.plugins.annotations.Mojo;
-import org.apache.maven.plugins.annotations.Parameter;
-import org.apache.maven.plugins.annotations.ResolutionScope;
-import org.apache.maven.plugins.assembly.archive.AssemblyArchiver;
-import org.apache.maven.plugins.assembly.io.AssemblyReader;
-import org.apache.maven.project.MavenProject;
-import org.apache.maven.project.MavenProjectHelper;
-import org.apache.maven.shared.filtering.MavenReaderFilter;
-import org.codehaus.plexus.util.xml.Xpp3Dom;
+import org.apache.maven.api.MojoExecution;
+import org.apache.maven.api.Project;
+import org.apache.maven.api.di.Inject;
+import org.apache.maven.api.plugin.MojoException;
+import org.apache.maven.api.plugin.annotations.Mojo;
+import org.apache.maven.api.xml.XmlNode;
 
 /**
  * Assemble an application bundle or distribution from an assembly descriptor. This goal is suitable either for binding
@@ -45,23 +37,17 @@ import org.codehaus.plexus.util.xml.Xpp3Dom;
  * @author <a href="mailto:brett@apache.org">Brett Porter</a>
  *
  */
-@Mojo(name = "single", requiresDependencyResolution = ResolutionScope.TEST, threadSafe = true)
+@Mojo(name = "single")
 public class SingleAssemblyMojo extends AbstractAssemblyMojo {
 
     @Inject
-    public SingleAssemblyMojo(
-            MavenProjectHelper projectHelper,
-            MavenReaderFilter mavenReaderFilter,
-            AssemblyArchiver assemblyArchiver,
-            AssemblyReader assemblyReader) {
-        super(projectHelper, mavenReaderFilter, assemblyArchiver, assemblyReader);
-    }
+    private MojoExecution mojoExecution;
 
-    @Parameter(defaultValue = "${plugin}", readonly = true)
-    private PluginDescriptor plugin;
+    @Inject
+    private Project project;
 
     @Override
-    public void execute() throws MojoExecutionException, MojoFailureException {
+    public void execute() throws MojoException {
         verifyRemovedParameter("classifier");
         verifyRemovedParameter("descriptor");
         verifyRemovedParameter("descriptorId");
@@ -71,24 +57,15 @@ public class SingleAssemblyMojo extends AbstractAssemblyMojo {
     }
 
     private void verifyRemovedParameter(String paramName) {
-        Object pluginConfiguration = plugin.getPlugin().getConfiguration();
-        if (pluginConfiguration instanceof Xpp3Dom) {
-            Xpp3Dom configDom = (Xpp3Dom) pluginConfiguration;
-
-            if (configDom.getChild(paramName) != null) {
-                throw new IllegalArgumentException(
-                        "parameter '" + paramName + "' has been removed from the plugin, please verify documentation.");
-            }
+        XmlNode pluginConfiguration = mojoExecution.getPlugin().getModel().getConfiguration();
+        if (pluginConfiguration != null && pluginConfiguration.child(paramName) != null) {
+            throw new IllegalArgumentException(
+                    "parameter '" + paramName + "' has been removed from the plugin, please verify documentation.");
         }
     }
 
-    /**
-     */
-    @Parameter(defaultValue = "${project}", readonly = true, required = true)
-    private MavenProject project;
-
     @Override
-    public MavenProject getProject() {
+    public Project getProject() {
         return project;
     }
 }

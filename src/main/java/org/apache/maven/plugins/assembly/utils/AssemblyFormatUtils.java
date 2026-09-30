@@ -25,12 +25,13 @@ import java.util.List;
 import java.util.ListIterator;
 import java.util.Properties;
 
-import org.apache.maven.artifact.Artifact;
-import org.apache.maven.execution.MavenSession;
+import org.apache.maven.api.Project;
+import org.apache.maven.api.Session;
 import org.apache.maven.plugins.assembly.AssemblerConfigurationSource;
+import org.apache.maven.plugins.assembly.artifact.AssemblyArtifact;
 import org.apache.maven.plugins.assembly.format.AssemblyFormattingException;
+import org.apache.maven.plugins.assembly.functions.MavenProjects;
 import org.apache.maven.plugins.assembly.model.Assembly;
-import org.apache.maven.project.MavenProject;
 import org.codehaus.plexus.interpolation.fixed.FixedStringSearchInterpolator;
 import org.codehaus.plexus.interpolation.fixed.MapBasedValueSource;
 import org.codehaus.plexus.interpolation.fixed.PrefixedObjectValueSource;
@@ -78,20 +79,26 @@ public final class AssemblyFormatUtils {
         return FixedStringSearchInterpolator.create(new PropertiesBasedValueSource(specialExpressionOverrides));
     }
 
-    public static FixedStringSearchInterpolator moduleProjectInterpolator(final MavenProject moduleProject) {
+    public static FixedStringSearchInterpolator moduleProjectInterpolator(
+            final Session session, final Project moduleProject) {
         if (moduleProject != null) {
             return FixedStringSearchInterpolator.createWithPermittedNulls(
-                    new PrefixedObjectValueSource("module.", moduleProject),
-                    new PrefixedPropertiesValueSource("module.properties.", moduleProject.getProperties()),
-                    moduleProject.getArtifact() != null
-                            ? new PrefixedObjectValueSource("module.", moduleProject.getArtifact())
+                    new PrefixedObjectValueSource("module.", ProjectUtils.interpolationRoot(moduleProject)),
+                    new PrefixedPropertiesValueSource(
+                            Collections.singletonList("module."),
+                            ProjectUtils.interpolationExtras(moduleProject),
+                            false),
+                    new PrefixedPropertiesValueSource("module.properties.", ProjectUtils.properties(moduleProject)),
+                    session != null
+                            ? new PrefixedObjectValueSource(
+                                    "module.", MavenProjects.mainArtifact(session, moduleProject))
                             : null);
         } else {
             return FixedStringSearchInterpolator.empty();
         }
     }
 
-    public static FixedStringSearchInterpolator moduleArtifactInterpolator(Artifact moduleArtifact) {
+    public static FixedStringSearchInterpolator moduleArtifactInterpolator(AssemblyArtifact moduleArtifact) {
         if (moduleArtifact != null) {
             final String groupIdPath = moduleArtifact.getGroupId().replace('.', '/');
 
@@ -105,26 +112,31 @@ public final class AssemblyFormatUtils {
         }
     }
 
-    public static FixedStringSearchInterpolator artifactProjectInterpolator(final MavenProject artifactProject) {
+    public static FixedStringSearchInterpolator artifactProjectInterpolator(
+            final Session session, final Project artifactProject) {
         if (artifactProject != null) {
             PrefixedObjectValueSource vs = null;
-            if (artifactProject.getArtifact() != null) {
-                vs = new PrefixedObjectValueSource("artifact.", artifactProject.getArtifact());
+            if (session != null) {
+                vs = new PrefixedObjectValueSource("artifact.", MavenProjects.mainArtifact(session, artifactProject));
             }
 
             final String groupIdPath = artifactProject.getGroupId().replace('.', '/');
 
             return FixedStringSearchInterpolator.createWithPermittedNulls(
                     new MapBasedValueSource(Collections.singletonMap("artifact.groupIdPath", groupIdPath)),
-                    new PrefixedObjectValueSource("artifact.", artifactProject),
-                    new PrefixedPropertiesValueSource("artifact.properties.", artifactProject.getProperties()),
+                    new PrefixedObjectValueSource("artifact.", ProjectUtils.interpolationRoot(artifactProject)),
+                    new PrefixedPropertiesValueSource(
+                            Collections.singletonList("artifact."),
+                            ProjectUtils.interpolationExtras(artifactProject),
+                            false),
+                    new PrefixedPropertiesValueSource("artifact.properties.", ProjectUtils.properties(artifactProject)),
                     vs);
         } else {
             return FixedStringSearchInterpolator.empty();
         }
     }
 
-    public static FixedStringSearchInterpolator artifactInterpolator(final Artifact artifact) {
+    public static FixedStringSearchInterpolator artifactInterpolator(final AssemblyArtifact artifact) {
         final String groupIdPath = artifact.getGroupId().replace('.', '/');
 
         return FixedStringSearchInterpolator.create(
@@ -134,7 +146,7 @@ public final class AssemblyFormatUtils {
                 new PrefixedObjectValueSource("artifact.handler.", artifact.getArtifactHandler()));
     }
 
-    public static FixedStringSearchInterpolator classifierRules(final Artifact artifact) {
+    public static FixedStringSearchInterpolator classifierRules(final AssemblyArtifact artifact) {
         final Properties specialRules = new Properties();
 
         final String classifier = ProjectUtils.getClassifier(artifact);
@@ -177,7 +189,7 @@ public final class AssemblyFormatUtils {
      */
     public static String getOutputDirectory(
             final String output,
-            final MavenProject artifactProject,
+            final Project artifactProject,
             final String finalName,
             final AssemblerConfigurationSource configSource)
             throws AssemblyFormattingException {
@@ -185,71 +197,41 @@ public final class AssemblyFormatUtils {
                 output,
                 finalName,
                 configSource,
-                moduleProjectInterpolator(null),
-                artifactProjectInterpolator(artifactProject));
+                moduleProjectInterpolator(null, null),
+                artifactProjectInterpolator(configSource == null ? null : configSource.getSession(), artifactProject));
     }
 
     private static FixedStringSearchInterpolator executionPropertiesInterpolator(
             AssemblerConfigurationSource configSource) {
-        MavenSession session;
+        Session session;
 
         if (configSource != null) {
-            session = configSource.getMavenSession();
+            session = configSource.getSession();
 
             if (session != null) {
                 return FixedStringSearchInterpolator.create(
-                        new PropertiesBasedValueSource(session.getUserProperties()),
-                        new PropertiesBasedValueSource(session.getSystemProperties()));
+                        new PropertiesBasedValueSource(ProjectUtils.toProperties(session.getUserProperties())),
+                        new PropertiesBasedValueSource(ProjectUtils.toProperties(session.getSystemProperties())));
             }
         }
         return FixedStringSearchInterpolator.empty();
     }
 
-    private static FixedStringSearchInterpolator mainProjectOnlyInterpolator(MavenProject mainProject) {
+    private static FixedStringSearchInterpolator mainProjectOnlyInterpolator(Project mainProject) {
         if (mainProject != null) {
             // 5
             return FixedStringSearchInterpolator.create(
                     new org.codehaus.plexus.interpolation.fixed.PrefixedObjectValueSource(
-                            InterpolationConstants.PROJECT_PREFIXES, mainProject, true));
+                            InterpolationConstants.PROJECT_PREFIXES, ProjectUtils.interpolationRoot(mainProject), true),
+                    new PrefixedPropertiesValueSource(
+                            InterpolationConstants.PROJECT_PREFIXES,
+                            ProjectUtils.interpolationExtras(mainProject),
+                            true));
         } else {
             return FixedStringSearchInterpolator.empty();
         }
     }
 
-    /**
-     * ORDER OF INTERPOLATION PRECEDENCE:
-     * <ol>
-     * <li>prefixed with "module.", if moduleProject != null
-     * <ol>
-     * <li>Artifact instance for module, if moduleArtifact != null</li>
-     * <li>ArtifactHandler instance for module, if moduleArtifact != null</li>
-     * <li>MavenProject instance for module</li>
-     * </ol>
-     * </li>
-     * <li>prefixed with "artifact."
-     * <ol>
-     * <li>Artifact instance</li>
-     * <li>ArtifactHandler instance for artifact</li>
-     * <li>MavenProject instance for artifact</li>
-     * </ol>
-     * </li>
-     * <li>prefixed with "pom." or "project."
-     * <ol>
-     * <li>MavenProject instance from current build</li>
-     * </ol>
-     * </li>
-     * <li>no prefix, using main project instance
-     * <ol>
-     * <li>MavenProject instance from current build</li>
-     * </ol>
-     * </li>
-     * <li>Support for special expressions, like ${dashClassifier?}</li>
-     * <li>user-defined properties from the command line</li>
-     * <li>properties from main project</li>
-     * <li>system properties, from the MavenSession instance (to support IDEs)</li>
-     * <li>environment variables.</li>
-     * </ol>
-     */
     public static String fixRelativeRefs(String src) {
         String value = src;
 
@@ -324,9 +306,9 @@ public final class AssemblyFormatUtils {
      */
     public static String evaluateFileNameMapping(
             final String expression,
-            final Artifact artifact,
-            /* nullable */ final MavenProject mainProject,
-            /* nullable */ final Artifact moduleArtifact,
+            final AssemblyArtifact artifact,
+            /* nullable */ final Project mainProject,
+            /* nullable */ final AssemblyArtifact moduleArtifact,
             final AssemblerConfigurationSource configSource,
             FixedStringSearchInterpolator moduleProjectInterpolator,
             FixedStringSearchInterpolator artifactProjectInterpolator) {

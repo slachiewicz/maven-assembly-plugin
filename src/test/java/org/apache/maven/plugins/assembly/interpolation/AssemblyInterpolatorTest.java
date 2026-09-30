@@ -23,8 +23,9 @@ import java.io.StringReader;
 import java.util.List;
 import java.util.Properties;
 
-import org.apache.maven.model.Build;
-import org.apache.maven.model.Model;
+import org.apache.maven.api.Project;
+import org.apache.maven.api.model.Build;
+import org.apache.maven.api.model.Model;
 import org.apache.maven.plugins.assembly.AssemblerConfigurationSource;
 import org.apache.maven.plugins.assembly.InvalidAssemblerConfigurationException;
 import org.apache.maven.plugins.assembly.io.AssemblyReadException;
@@ -33,7 +34,7 @@ import org.apache.maven.plugins.assembly.io.DefaultAssemblyReaderTest;
 import org.apache.maven.plugins.assembly.model.Assembly;
 import org.apache.maven.plugins.assembly.model.DependencySet;
 import org.apache.maven.plugins.assembly.testutils.PojoConfigSource;
-import org.apache.maven.project.MavenProject;
+import org.apache.maven.plugins.assembly.testutils.TestStubs;
 import org.codehaus.plexus.interpolation.fixed.FixedStringSearchInterpolator;
 import org.codehaus.plexus.interpolation.fixed.PropertiesBasedValueSource;
 import org.junit.jupiter.api.Test;
@@ -51,13 +52,13 @@ import static org.mockito.Mockito.when;
 class AssemblyInterpolatorTest {
     @Test
     void dependencySetOutputFileNameMappingsAreNotInterpolated() throws Exception {
-        final Model model = new Model();
-        model.setArtifactId("artifact-id");
-        model.setGroupId("group.id");
-        model.setVersion("1");
-        model.setPackaging("jar");
+        final Model.Builder model = Model.newBuilder();
+        model.artifactId("artifact-id");
+        model.groupId("group.id");
+        model.version("1");
+        model.packaging("jar");
 
-        final MavenProject project = new MavenProject(model);
+        final Project project = TestStubs.project(model.build(), null, null, "jar");
 
         final Assembly assembly = new Assembly();
 
@@ -87,11 +88,11 @@ class AssemblyInterpolatorTest {
 
     @Test
     void dependencySetOutputDirectoryIsNotInterpolated() throws Exception {
-        final Model model = new Model();
-        model.setArtifactId("artifact-id");
-        model.setGroupId("group.id");
-        model.setVersion("1");
-        model.setPackaging("jar");
+        final Model.Builder model = Model.newBuilder();
+        model.artifactId("artifact-id");
+        model.groupId("group.id");
+        model.version("1");
+        model.packaging("jar");
 
         final Assembly assembly = new Assembly();
 
@@ -107,7 +108,7 @@ class AssemblyInterpolatorTest {
         configSourceStub.setRootInterpolator(FixedStringSearchInterpolator.create());
         configSourceStub.setEnvironmentInterpolator(FixedStringSearchInterpolator.create());
 
-        final MavenProject project = new MavenProject(model);
+        final Project project = TestStubs.project(model.build(), null, null, "jar");
         configSourceStub.setMavenProject(project);
         final Assembly outputAssembly = roundTripInterpolation(assembly, configSourceStub);
 
@@ -127,17 +128,17 @@ class AssemblyInterpolatorTest {
 
     @Test
     void shouldResolveModelGroupIdInAssemblyId() throws Exception {
-        final Model model = new Model();
-        model.setArtifactId("artifact-id");
-        model.setGroupId("group.id");
-        model.setVersion("1");
-        model.setPackaging("jar");
+        final Model.Builder model = Model.newBuilder();
+        model.artifactId("artifact-id");
+        model.groupId("group.id");
+        model.version("1");
+        model.packaging("jar");
 
         final Assembly assembly = new Assembly();
 
         assembly.setId("assembly.${groupId}");
 
-        final MavenProject project = new MavenProject(model);
+        final Project project = TestStubs.project(model.build(), null, null, "jar");
         final PojoConfigSource configSourceStub = new PojoConfigSource();
 
         configSourceStub.setRootInterpolator(FixedStringSearchInterpolator.create());
@@ -149,16 +150,16 @@ class AssemblyInterpolatorTest {
 
     @Test
     void shouldResolveModelPropertyBeforeModelGroupIdInAssemblyId() throws Exception {
-        final Model model = new Model();
-        model.setArtifactId("artifact-id");
-        model.setGroupId("group.id");
-        model.setVersion("1");
-        model.setPackaging("jar");
+        final Model.Builder model = Model.newBuilder();
+        model.artifactId("artifact-id");
+        model.groupId("group.id");
+        model.version("1");
+        model.packaging("jar");
 
         final Properties props = new Properties();
         props.setProperty("groupId", "other.id");
 
-        model.setProperties(props);
+        model.properties(TestStubs.toMap(props));
 
         final PojoConfigSource configSourceStub = new PojoConfigSource();
 
@@ -169,7 +170,7 @@ class AssemblyInterpolatorTest {
 
         assembly.setId("assembly.${groupId}");
 
-        final MavenProject project = new MavenProject(model);
+        final Project project = TestStubs.project(model.build(), null, null, "jar");
         configSourceStub.setMavenProject(project);
         final Assembly result = roundTripInterpolation(assembly, configSourceStub);
 
@@ -178,16 +179,16 @@ class AssemblyInterpolatorTest {
 
     @Test
     void shouldResolveContextValueBeforeModelPropertyOrModelGroupIdInAssemblyId() throws Exception {
-        final Model model = new Model();
-        model.setArtifactId("artifact-id");
-        model.setGroupId("group.id");
-        model.setVersion("1");
-        model.setPackaging("jar");
+        final Model.Builder model = Model.newBuilder();
+        model.artifactId("artifact-id");
+        model.groupId("group.id");
+        model.version("1");
+        model.packaging("jar");
 
         final Properties props = new Properties();
         props.setProperty("groupId", "other.id");
 
-        model.setProperties(props);
+        model.properties(TestStubs.toMap(props));
 
         final Assembly assembly = new Assembly();
 
@@ -202,7 +203,7 @@ class AssemblyInterpolatorTest {
                 .thenReturn(FixedStringSearchInterpolator.create(new PropertiesBasedValueSource(execProps)));
         when(cs.getEnvInterpolator()).thenReturn(FixedStringSearchInterpolator.empty());
 
-        final MavenProject project = new MavenProject(model);
+        final Project project = TestStubs.project(model.build(), null, null, "jar");
         when(cs.getProject()).thenReturn(project);
 
         final Assembly result = roundTripInterpolation(assembly, cs);
@@ -212,11 +213,11 @@ class AssemblyInterpolatorTest {
 
     @Test
     void shouldNotTouchUnresolvedExpression() throws Exception {
-        final Model model = new Model();
-        model.setArtifactId("artifact-id");
-        model.setGroupId("group.id");
-        model.setVersion("1");
-        model.setPackaging("jar");
+        final Model.Builder model = Model.newBuilder();
+        model.artifactId("artifact-id");
+        model.groupId("group.id");
+        model.version("1");
+        model.packaging("jar");
 
         final Assembly assembly = new Assembly();
 
@@ -227,7 +228,7 @@ class AssemblyInterpolatorTest {
         configSourceStub.setRootInterpolator(FixedStringSearchInterpolator.create());
         configSourceStub.setEnvironmentInterpolator(FixedStringSearchInterpolator.create());
 
-        final MavenProject project = new MavenProject(model);
+        final Project project = TestStubs.project(model.build(), null, null, "jar");
         configSourceStub.setMavenProject(project);
         final Assembly result = roundTripInterpolation(assembly, configSourceStub);
         assertEquals("assembly.${unresolved}", result.getId());
@@ -235,11 +236,10 @@ class AssemblyInterpolatorTest {
 
     @Test
     void shouldInterpolateMultiDotProjectExpression() throws Exception {
-        final Build build = new Build();
-        build.setFinalName("final-name");
+        final Build build = Build.newBuilder().finalName("final-name").build();
 
-        final Model model = new Model();
-        model.setBuild(build);
+        final Model.Builder model = Model.newBuilder();
+        model.build(build);
 
         final Assembly assembly = new Assembly();
 
@@ -250,7 +250,7 @@ class AssemblyInterpolatorTest {
         configSourceStub.setRootInterpolator(FixedStringSearchInterpolator.create());
         configSourceStub.setEnvironmentInterpolator(FixedStringSearchInterpolator.create());
 
-        final MavenProject project = new MavenProject(model);
+        final Project project = TestStubs.project(model.build(), null, null, "jar");
         configSourceStub.setMavenProject(project);
         final Assembly result = roundTripInterpolation(assembly, configSourceStub);
         assertEquals("assembly.final-name", result.getId());

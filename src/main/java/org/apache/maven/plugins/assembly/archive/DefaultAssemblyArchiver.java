@@ -18,9 +18,6 @@
  */
 package org.apache.maven.plugins.assembly.archive;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-
 import java.io.File;
 import java.io.IOException;
 import java.io.StringReader;
@@ -28,7 +25,11 @@ import java.nio.file.attribute.FileTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 
+import org.apache.maven.api.di.Inject;
+import org.apache.maven.api.di.Named;
+import org.apache.maven.api.services.Lookup;
 import org.apache.maven.plugins.assembly.AssemblerConfigurationSource;
 import org.apache.maven.plugins.assembly.InvalidAssemblerConfigurationException;
 import org.apache.maven.plugins.assembly.archive.archiver.AssemblyProxyArchiver;
@@ -38,13 +39,13 @@ import org.apache.maven.plugins.assembly.artifact.DependencyResolutionException;
 import org.apache.maven.plugins.assembly.filter.ComponentsXmlArchiverFileFilter;
 import org.apache.maven.plugins.assembly.filter.ContainerDescriptorHandler;
 import org.apache.maven.plugins.assembly.format.AssemblyFormattingException;
-import org.apache.maven.plugins.assembly.internal.DebugConfigurationListener;
+import org.apache.maven.plugins.assembly.internal.BeanConfigurator;
+import org.apache.maven.plugins.assembly.internal.BeanConfigurator.BeanConfigurationException;
 import org.apache.maven.plugins.assembly.interpolation.AssemblyExpressionEvaluator;
 import org.apache.maven.plugins.assembly.model.Assembly;
 import org.apache.maven.plugins.assembly.model.ContainerDescriptorHandlerConfig;
 import org.apache.maven.plugins.assembly.utils.AssemblyFileUtils;
 import org.apache.maven.plugins.assembly.utils.AssemblyFormatUtils;
-import org.codehaus.plexus.PlexusContainer;
 import org.codehaus.plexus.archiver.ArchiveFinalizer;
 import org.codehaus.plexus.archiver.Archiver;
 import org.codehaus.plexus.archiver.ArchiverException;
@@ -53,18 +54,13 @@ import org.codehaus.plexus.archiver.filters.JarSecurityFileSelector;
 import org.codehaus.plexus.archiver.jar.JarArchiver;
 import org.codehaus.plexus.archiver.manager.ArchiverManager;
 import org.codehaus.plexus.archiver.manager.NoSuchArchiverException;
+import org.codehaus.plexus.archiver.manager.ServiceLoaderArchiverManager;
 import org.codehaus.plexus.archiver.tar.TarArchiver;
 import org.codehaus.plexus.archiver.tar.TarLongFileMode;
 import org.codehaus.plexus.archiver.war.WarArchiver;
 import org.codehaus.plexus.archiver.zip.AbstractZipArchiver;
 import org.codehaus.plexus.build.BuildContext;
-import org.codehaus.plexus.component.configurator.BasicComponentConfigurator;
-import org.codehaus.plexus.component.configurator.ComponentConfigurationException;
-import org.codehaus.plexus.component.configurator.ConfigurationListener;
-import org.codehaus.plexus.component.configurator.expression.ExpressionEvaluator;
-import org.codehaus.plexus.component.repository.exception.ComponentLookupException;
 import org.codehaus.plexus.components.io.fileselectors.FileSelector;
-import org.codehaus.plexus.configuration.xml.XmlPlexusConfiguration;
 import org.codehaus.plexus.util.StringUtils;
 import org.codehaus.plexus.util.xml.Xpp3Dom;
 import org.codehaus.plexus.util.xml.Xpp3DomBuilder;
@@ -91,29 +87,34 @@ public class DefaultAssemblyArchiver implements AssemblyArchiver {
 
     private final List<AssemblyArchiverPhase> assemblyPhases;
 
-    @SuppressWarnings("MismatchedQueryAndUpdateOfCollection")
-    private final Map<String, ContainerDescriptorHandler> containerDescriptorHandlers;
-
-    private final PlexusContainer container;
-
-    private final BasicComponentConfigurator configurator;
+    private final Supplier<Map<String, ContainerDescriptorHandler>> containerDescriptorHandlers;
 
     private final BuildContext buildContext;
 
+    /**
+     * Container descriptor handlers are looked up by hint when an assembly asks for them, so that handlers contributed
+     * by the plugin's dependencies (as {@code components.xml} entries or {@code @Named} beans) are found too.
+     * The {@link ArchiverManager} is created directly: plexus-archiver's own component cannot be injected into a
+     * Maven 4 plugin. The {@link BuildContext} is optional, it only exists under an IDE integration.
+     */
     @Inject
+    public DefaultAssemblyArchiver(List<AssemblyArchiverPhase> assemblyPhases, Lookup lookup) {
+        this(
+                new ServiceLoaderArchiverManager(),
+                assemblyPhases,
+                () -> lookup.lookupMap(ContainerDescriptorHandler.class),
+                lookup.lookupOptional(BuildContext.class).orElse(null));
+    }
+
     public DefaultAssemblyArchiver(
             ArchiverManager archiverManager,
             List<AssemblyArchiverPhase> assemblyPhases,
-            Map<String, ContainerDescriptorHandler> containerDescriptorHandlers,
-            PlexusContainer container,
-            BasicComponentConfigurator configurator,
+            Supplier<Map<String, ContainerDescriptorHandler>> containerDescriptorHandlers,
             BuildContext buildContext) {
         this.archiverManager = requireNonNull(archiverManager);
         this.assemblyPhases = requireNonNull(assemblyPhases);
         this.containerDescriptorHandlers = requireNonNull(containerDescriptorHandlers);
-        this.container = requireNonNull(container);
-        this.configurator = requireNonNull(configurator);
-        this.buildContext = requireNonNull(buildContext);
+        this.buildContext = buildContext;
     }
 
     private List<AssemblyArchiverPhase> sortedPhases() {
@@ -157,8 +158,9 @@ public class DefaultAssemblyArchiver implements AssemblyArchiver {
                         specifiedBasedir,
                         finalName,
                         configSource,
-                        AssemblyFormatUtils.moduleProjectInterpolator(configSource.getProject()),
-                        AssemblyFormatUtils.artifactProjectInterpolator(null));
+                        AssemblyFormatUtils.moduleProjectInterpolator(
+                                configSource.getSession(), configSource.getProject()),
+                        AssemblyFormatUtils.artifactProjectInterpolator(configSource.getSession(), null));
             }
 
             final List<ContainerDescriptorHandler> containerHandlers =
@@ -179,7 +181,9 @@ public class DefaultAssemblyArchiver implements AssemblyArchiver {
             }
 
             archiver.createArchive();
-            buildContext.refresh(destFile);
+            if (buildContext != null) {
+                buildContext.refresh(destFile);
+            }
         } catch (final ArchiverException | IOException e) {
             throw new ArchiveCreationException(
                     "Error creating assembly archive " + assembly.getId() + ": " + e.getMessage(), e);
@@ -209,6 +213,8 @@ public class DefaultAssemblyArchiver implements AssemblyArchiver {
             throws InvalidAssemblerConfigurationException
                 // CHECKSTYLE_ON: LineLength
             {
+        final Map<String, ContainerDescriptorHandler> containerDescriptorHandlers =
+                this.containerDescriptorHandlers.get();
         LOGGER.debug("All known ContainerDescriptorHandler components: "
                 + (containerDescriptorHandlers == null
                         ? "none; map is null."
@@ -224,7 +230,8 @@ public class DefaultAssemblyArchiver implements AssemblyArchiver {
         if (!requestedContainerDescriptorHandlers.isEmpty()) {
             for (final ContainerDescriptorHandlerConfig config : requestedContainerDescriptorHandlers) {
                 final String hint = config.getHandlerName();
-                final ContainerDescriptorHandler handler = containerDescriptorHandlers.get(hint);
+                final ContainerDescriptorHandler handler =
+                        containerDescriptorHandlers == null ? null : containerDescriptorHandlers.get(hint);
 
                 if (handler == null) {
                     throw new InvalidAssemblerConfigurationException(
@@ -294,9 +301,7 @@ public class DefaultAssemblyArchiver implements AssemblyArchiver {
             extraSelectors.add(new JarSecurityFileSelector());
 
             extraFinalizers.add(new ManifestCreationFinalizer(
-                    configSource.getMavenSession(),
-                    configSource.getProject(),
-                    configSource.getJarArchiveConfiguration()));
+                    configSource.getSession(), configSource.getProject(), configSource.getJarArchiveConfiguration()));
         }
 
         if (configSource.getArchiverConfig() != null) {
@@ -361,14 +366,9 @@ public class DefaultAssemblyArchiver implements AssemblyArchiver {
 
         try {
             configureComponent(handler, config, configSource);
-        } catch (final ComponentConfigurationException e) {
+        } catch (final BeanConfigurationException e) {
             throw new InvalidAssemblerConfigurationException(
                     "Failed to configure handler: " + handler.getClass().getName(), e);
-        } catch (final ComponentLookupException e) {
-            throw new InvalidAssemblerConfigurationException(
-                    "Failed to lookup configurator for setup of handler: "
-                            + handler.getClass().getName(),
-                    e);
         }
 
         LOGGER.debug("-- end configuration --");
@@ -389,14 +389,9 @@ public class DefaultAssemblyArchiver implements AssemblyArchiver {
 
         try {
             configureComponent(archiver, config, configSource);
-        } catch (final ComponentConfigurationException e) {
+        } catch (final BeanConfigurationException e) {
             throw new ArchiverException(
                     "Failed to configure archiver: " + archiver.getClass().getName(), e);
-        } catch (final ComponentLookupException e) {
-            throw new ArchiverException(
-                    "Failed to lookup configurator for setup of archiver: "
-                            + archiver.getClass().getName(),
-                    e);
         }
 
         LOGGER.debug("-- end configuration --");
@@ -404,15 +399,7 @@ public class DefaultAssemblyArchiver implements AssemblyArchiver {
 
     private void configureComponent(
             final Object component, final Xpp3Dom config, final AssemblerConfigurationSource configSource)
-            throws ComponentLookupException, ComponentConfigurationException {
-
-        final ConfigurationListener listener = new DebugConfigurationListener(LOGGER);
-
-        final ExpressionEvaluator expressionEvaluator = new AssemblyExpressionEvaluator(configSource);
-
-        final XmlPlexusConfiguration configuration = new XmlPlexusConfiguration(config);
-
-        configurator.configureComponent(
-                component, configuration, expressionEvaluator, container.getContainerRealm(), listener);
+            throws BeanConfigurationException {
+        new BeanConfigurator(LOGGER).configure(component, config, new AssemblyExpressionEvaluator(configSource));
     }
 }

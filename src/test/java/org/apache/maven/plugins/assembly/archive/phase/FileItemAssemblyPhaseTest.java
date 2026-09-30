@@ -24,12 +24,12 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.Collections;
 
-import org.apache.maven.model.Model;
+import org.apache.maven.api.Project;
 import org.apache.maven.plugins.assembly.AssemblerConfigurationSource;
 import org.apache.maven.plugins.assembly.model.Assembly;
 import org.apache.maven.plugins.assembly.model.FileItem;
+import org.apache.maven.plugins.assembly.testutils.TestStubs;
 import org.apache.maven.plugins.assembly.utils.TypeConversionUtils;
-import org.apache.maven.project.MavenProject;
 import org.codehaus.plexus.archiver.Archiver;
 import org.codehaus.plexus.components.io.resources.PlexusIoResource;
 import org.codehaus.plexus.interpolation.fixed.FixedStringSearchInterpolator;
@@ -82,7 +82,8 @@ class FileItemAssemblyPhaseTest {
         Files.write(file.toPath(), Collections.singletonList("This is a test file."), StandardCharsets.UTF_8);
 
         when(macCS.getBasedir()).thenReturn(basedir);
-        when(macCS.getProject()).thenReturn(new MavenProject(new Model()));
+        final Project project = TestStubs.project("unknown", "unknown", "0");
+        when(macCS.getProject()).thenReturn(project);
         when(macCS.getFinalName()).thenReturn("final-name");
         prepareInterpolators(macCS);
 
@@ -116,7 +117,8 @@ class FileItemAssemblyPhaseTest {
         Files.write(file.toPath(), Collections.singletonList("This is a test file."), StandardCharsets.UTF_8);
 
         when(macCS.getBasedir()).thenReturn(basedir);
-        when(macCS.getProject()).thenReturn(new MavenProject(new Model()));
+        final Project project = TestStubs.project("unknown", "unknown", "0");
+        when(macCS.getProject()).thenReturn(project);
         when(macCS.getFinalName()).thenReturn("final-name");
         prepareInterpolators(macCS);
 
@@ -165,7 +167,8 @@ class FileItemAssemblyPhaseTest {
                 StandardCharsets.UTF_8);
 
         when(macCS.getBasedir()).thenReturn(basedir);
-        when(macCS.getProject()).thenReturn(new MavenProject(new Model()));
+        final Project project = TestStubs.project("unknown", "unknown", "0");
+        when(macCS.getProject()).thenReturn(project);
         when(macCS.getFinalName()).thenReturn("final-name");
         prepareInterpolators(macCS);
 
@@ -244,7 +247,8 @@ class FileItemAssemblyPhaseTest {
                 StandardCharsets.UTF_8);
 
         when(macCS.getBasedir()).thenReturn(basedir);
-        when(macCS.getProject()).thenReturn(new MavenProject(new Model()));
+        final Project project = TestStubs.project("unknown", "unknown", "0");
+        when(macCS.getProject()).thenReturn(project);
         when(macCS.getFinalName()).thenReturn("final-name");
         prepareInterpolators(macCS);
 
@@ -326,7 +330,8 @@ class FileItemAssemblyPhaseTest {
                 StandardCharsets.UTF_8);
 
         when(macCS.getBasedir()).thenReturn(basedir);
-        when(macCS.getProject()).thenReturn(new MavenProject(new Model()));
+        final Project project = TestStubs.project("unknown", "unknown", "0");
+        when(macCS.getProject()).thenReturn(project);
         when(macCS.getFinalName()).thenReturn("final-name");
         prepareInterpolators(macCS);
 

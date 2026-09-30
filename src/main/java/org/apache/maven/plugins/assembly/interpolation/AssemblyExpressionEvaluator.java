@@ -20,10 +20,10 @@ package org.apache.maven.plugins.assembly.interpolation;
 
 import java.io.File;
 
+import org.apache.maven.api.Project;
 import org.apache.maven.plugins.assembly.AssemblerConfigurationSource;
 import org.apache.maven.plugins.assembly.io.DefaultAssemblyReader;
 import org.apache.maven.plugins.assembly.utils.InterpolationConstants;
-import org.apache.maven.project.MavenProject;
 import org.codehaus.plexus.component.configurator.expression.ExpressionEvaluationException;
 import org.codehaus.plexus.component.configurator.expression.ExpressionEvaluator;
 import org.codehaus.plexus.interpolation.PrefixAwareRecursionInterceptor;
@@ -44,7 +44,7 @@ public class AssemblyExpressionEvaluator implements ExpressionEvaluator {
     public AssemblyExpressionEvaluator(AssemblerConfigurationSource configSource) {
         this.configSource = configSource;
 
-        final MavenProject project = configSource.getProject();
+        final Project project = configSource.getProject();
         final FixedStringSearchInterpolator projectInterpolator =
                 DefaultAssemblyReader.createProjectInterpolator(project);
         interpolator = AssemblyInterpolator.fullInterpolator(project, projectInterpolator, configSource);

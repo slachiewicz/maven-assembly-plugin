@@ -18,11 +18,10 @@
  */
 package org.apache.maven.plugins.assembly.archive.phase;
 
-import javax.inject.Named;
-import javax.inject.Singleton;
-
 import java.util.List;
 
+import org.apache.maven.api.di.Named;
+import org.apache.maven.api.di.Singleton;
 import org.apache.maven.plugins.assembly.AssemblerConfigurationSource;
 import org.apache.maven.plugins.assembly.archive.ArchiveCreationException;
 import org.apache.maven.plugins.assembly.archive.task.AddFileSetsTask;

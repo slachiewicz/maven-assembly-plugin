@@ -27,20 +27,21 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Set;
 
-import org.apache.maven.artifact.Artifact;
-import org.apache.maven.model.Model;
+import org.apache.maven.api.Project;
+import org.apache.maven.api.Session;
+import org.apache.maven.api.model.Model;
 import org.apache.maven.plugins.assembly.AssemblerConfigurationSource;
 import org.apache.maven.plugins.assembly.InvalidAssemblerConfigurationException;
 import org.apache.maven.plugins.assembly.archive.ArchiveCreationException;
 import org.apache.maven.plugins.assembly.archive.DefaultAssemblyArchiverTest;
+import org.apache.maven.plugins.assembly.artifact.AssemblyArtifact;
 import org.apache.maven.plugins.assembly.artifact.DependencyResolver;
 import org.apache.maven.plugins.assembly.model.Assembly;
 import org.apache.maven.plugins.assembly.model.FileSet;
 import org.apache.maven.plugins.assembly.model.ModuleBinaries;
 import org.apache.maven.plugins.assembly.model.ModuleSet;
 import org.apache.maven.plugins.assembly.model.ModuleSources;
-import org.apache.maven.project.MavenProject;
-import org.apache.maven.project.ProjectBuilder;
+import org.apache.maven.plugins.assembly.testutils.TestStubs;
 import org.codehaus.plexus.archiver.Archiver;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -80,12 +81,20 @@ class ModuleSetAssemblyPhaseTest {
 
     private DependencyResolver dependencyResolver;
 
+    private Session session;
+
     @BeforeEach
     void setUp() {
-        ProjectBuilder projectBuilder = mock(ProjectBuilder.class);
         this.dependencyResolver = mock(DependencyResolver.class);
+        this.session = TestStubs.session();
 
-        this.phase = new ModuleSetAssemblyPhase(projectBuilder, dependencyResolver);
+        this.phase = new ModuleSetAssemblyPhase(dependencyResolver);
+    }
+
+    private AssemblerConfigurationSource mockConfigSource() {
+        final AssemblerConfigurationSource configSource = mock(AssemblerConfigurationSource.class);
+        lenient().when(configSource.getSession()).thenReturn(session);
+        return configSource;
     }
 
     @Test
@@ -130,12 +139,9 @@ class ModuleSetAssemblyPhaseTest {
 
     @Test
     void createFileSetShouldUseModuleDirOnlyWhenOutDirIsNull() throws Exception {
-        final Model model = new Model();
-        model.setArtifactId("artifact");
+        final Project project = TestStubs.project("unknown", "artifact", "0");
 
-        final MavenProject project = new MavenProject(model);
-
-        final AssemblerConfigurationSource configSource = mock(AssemblerConfigurationSource.class);
+        final AssemblerConfigurationSource configSource = mockConfigSource();
         when(configSource.getProject()).thenReturn(project);
 
         final FileSet fs = new FileSet();
@@ -145,15 +151,8 @@ class ModuleSetAssemblyPhaseTest {
 
         final File basedir = temporaryFolder;
 
-        final MavenProject artifactProject = new MavenProject(new Model());
-        artifactProject.setGroupId("GROUPID");
-        artifactProject.setFile(new File(basedir, "pom.xml"));
-
-        Artifact artifact = mock(Artifact.class);
-        when(artifact.getGroupId()).thenReturn("GROUPID");
-        when(artifact.getArtifactId()).thenReturn("artifact");
-
-        artifactProject.setArtifact(artifact);
+        final Project artifactProject = TestStubs.project(
+                TestStubs.model("GROUPID", "artifact", "0"), new File(basedir, "pom.xml").toPath(), null, "jar");
 
         DefaultAssemblyArchiverTest.setupInterpolators(configSource, project);
 
@@ -163,18 +162,15 @@ class ModuleSetAssemblyPhaseTest {
 
         // result of easymock migration, should be assert of expected result instead of verifying methodcalls
         verify(configSource, atLeastOnce()).getFinalName();
-        verify(configSource, atLeastOnce()).getMavenSession();
+        verify(configSource, atLeastOnce()).getSession();
         verify(configSource, atLeastOnce()).getProject();
     }
 
     @Test
     void createFileSetShouldPrependModuleDirWhenOutDirIsProvided() throws Exception {
-        final Model model = new Model();
-        model.setArtifactId("artifact");
+        final Project project = TestStubs.project("unknown", "artifact", "0");
 
-        final MavenProject project = new MavenProject(model);
-
-        final AssemblerConfigurationSource configSource = mock(AssemblerConfigurationSource.class);
+        final AssemblerConfigurationSource configSource = mockConfigSource();
         when(configSource.getProject()).thenReturn(project);
 
         final FileSet fs = new FileSet();
@@ -183,18 +179,10 @@ class ModuleSetAssemblyPhaseTest {
         final ModuleSources sources = new ModuleSources();
         sources.setIncludeModuleDirectory(true);
 
-        final MavenProject artifactProject = new MavenProject(new Model());
-        artifactProject.setGroupId("GROUPID");
-
         final File basedir = temporaryFolder;
 
-        artifactProject.setFile(new File(basedir, "pom.xml"));
-
-        Artifact artifact = mock(Artifact.class);
-        when(artifact.getGroupId()).thenReturn("GROUPID");
-        when(artifact.getArtifactId()).thenReturn("artifact");
-
-        artifactProject.setArtifact(artifact);
+        final Project artifactProject = TestStubs.project(
+                TestStubs.model("GROUPID", "artifact", "0"), new File(basedir, "pom.xml").toPath(), null, "jar");
         DefaultAssemblyArchiverTest.setupInterpolators(configSource, project /* or artifactProject */);
 
         final FileSet result = this.phase.createFileSet(fs, sources, artifactProject, configSource);
@@ -203,34 +191,25 @@ class ModuleSetAssemblyPhaseTest {
 
         // result of easymock migration, should be assert of expected result instead of verifying methodcalls
         verify(configSource, atLeastOnce()).getFinalName();
-        verify(configSource, atLeastOnce()).getMavenSession();
+        verify(configSource, atLeastOnce()).getSession();
         verify(configSource, atLeastOnce()).getProject();
     }
 
     @Test
     void createFileSetShouldAddExcludesForSubModulesWhenExcludeSubModDirsIsTrue() throws Exception {
-        final AssemblerConfigurationSource configSource = mock(AssemblerConfigurationSource.class);
+        final AssemblerConfigurationSource configSource = mockConfigSource();
 
         final FileSet fs = new FileSet();
 
         final ModuleSources sources = new ModuleSources();
         sources.setExcludeSubModuleDirectories(true);
 
-        final Model model = new Model();
-        model.setArtifactId("artifact");
-
-        model.addModule("submodule");
-
-        final MavenProject project = new MavenProject(model);
-
         final File basedir = temporaryFolder;
-        project.setGroupId("GROUPID");
-        project.setFile(new File(basedir, "pom.xml"));
-
-        Artifact artifact = mock(Artifact.class);
-        when(artifact.getGroupId()).thenReturn("GROUPID");
-
-        project.setArtifact(artifact);
+        final Project project = TestStubs.project(
+                TestStubs.model("GROUPID", "artifact", "0").withModules(List.of("submodule")),
+                new File(basedir, "pom.xml").toPath(),
+                null,
+                "jar");
         DefaultAssemblyArchiverTest.setupInterpolators(configSource, project);
 
         final FileSet result = this.phase.createFileSet(fs, sources, project, configSource);
@@ -240,7 +219,7 @@ class ModuleSetAssemblyPhaseTest {
 
         // result of easymock migration, should be assert of expected result instead of verifying methodcalls
         verify(configSource, atLeastOnce()).getFinalName();
-        verify(configSource, atLeastOnce()).getMavenSession();
+        verify(configSource, atLeastOnce()).getSession();
         verify(configSource, atLeastOnce()).getProject();
     }
 
@@ -254,20 +233,17 @@ class ModuleSetAssemblyPhaseTest {
 
     @Test
     void executeShouldAddOneModuleSetWithOneModuleInIt() throws Exception {
-        final MavenProject project = createProject("group", "artifact", "version", null);
+        final Project project = createProject("group", "artifact", "version", null);
 
-        final MavenProject module = createProject("group", "module", "version", project);
+        final Project module = createProject("group", "module", "version", project);
 
-        Artifact artifact = mock(Artifact.class);
         final File moduleArtifactFile = File.createTempFile("junit", null, temporaryFolder);
-        when(artifact.getGroupId()).thenReturn("GROUPID");
-        when(artifact.getFile()).thenReturn(moduleArtifactFile);
-        module.setArtifact(artifact);
+        TestStubs.mainArtifactFile(session, module, moduleArtifactFile);
 
-        final List<MavenProject> projects = new ArrayList<>();
+        final List<Project> projects = new ArrayList<>();
         projects.add(module);
 
-        final AssemblerConfigurationSource configSource = mock(AssemblerConfigurationSource.class);
+        final AssemblerConfigurationSource configSource = mockConfigSource();
         when(configSource.getReactorProjects()).thenReturn(projects);
         when(configSource.getFinalName()).thenReturn("final-name");
         when(configSource.getProject()).thenReturn(project);
@@ -299,7 +275,7 @@ class ModuleSetAssemblyPhaseTest {
 
         // result of easymock migration, should be assert of expected result instead of verifying methodcalls
         verify(configSource, atLeastOnce()).getFinalName();
-        verify(configSource, atLeastOnce()).getMavenSession();
+        verify(configSource, atLeastOnce()).getSession();
         verify(configSource, atLeastOnce()).getProject();
         verify(configSource, atLeastOnce()).getReactorProjects();
 
@@ -326,27 +302,19 @@ class ModuleSetAssemblyPhaseTest {
         binaries.setOutputDirectory("out");
         binaries.setOutputFileNameMapping("artifact");
 
-        final MavenProject project = createProject("group", "artifact", "version", null);
-        project.setPackaging("pom");
+        final Project project = createProject("group", "artifact", "version", null, "pom");
 
-        Artifact artifact = mock(Artifact.class);
-        project.setArtifact(artifact);
+        final Set<Project> projects = singleton(project);
 
-        final Set<MavenProject> projects = singleton(project);
-
-        this.phase.addModuleBinaries(null, null, binaries, projects, null, null);
+        this.phase.addModuleBinaries(null, null, binaries, projects, null, mockConfigSource());
     }
 
     @Test
     void addModuleBinariesShouldAddOnePomModuleAttachmentArtifactAndNoDeps() throws Exception {
-        final AssemblerConfigurationSource configSource = mock(AssemblerConfigurationSource.class);
+        final AssemblerConfigurationSource configSource = mockConfigSource();
         when(configSource.getFinalName()).thenReturn("final-name");
 
-        Artifact artifact = mock(Artifact.class);
-        when(artifact.getGroupId()).thenReturn("GROUPID");
-        when(artifact.getClassifier()).thenReturn("test");
         final File artifactFile = File.createTempFile("junit", null, temporaryFolder);
-        when(artifact.getFile()).thenReturn(artifactFile);
 
         final Archiver archiver = mock(Archiver.class);
         when(archiver.getDestFile()).thenReturn(new File("junk"));
@@ -362,11 +330,10 @@ class ModuleSetAssemblyPhaseTest {
         binaries.setOutputFileNameMapping("artifact");
         binaries.setAttachmentClassifier("test");
 
-        final MavenProject project = createProject("group", "artifact", "version", null);
-        project.setPackaging("pom");
-        project.addAttachedArtifact(artifact);
+        final Project project = createProject("group", "artifact", "version", null, "pom");
+        TestStubs.attach(session, project, "test", "jar", artifactFile);
 
-        final Set<MavenProject> projects = singleton(project);
+        final Set<Project> projects = singleton(project);
 
         when(dependencyResolver.resolveDependencySets(isNull(), isNull(), eq(configSource), anyList()))
                 .thenReturn(new LinkedHashMap<>());
@@ -376,7 +343,7 @@ class ModuleSetAssemblyPhaseTest {
 
         // result of easymock migration, should be assert of expected result instead of verifying methodcalls
         verify(configSource, atLeastOnce()).getFinalName();
-        verify(configSource, atLeastOnce()).getMavenSession();
+        verify(configSource, atLeastOnce()).getSession();
         verify(configSource, atLeastOnce()).getProject();
 
         verify(archiver).addFile(artifactFile, "out/artifact", 511);
@@ -391,7 +358,6 @@ class ModuleSetAssemblyPhaseTest {
 
     @Test
     void addModuleBinariesShouldFailWhenOneModuleDoesntHaveAttachmentWithMatchingClassifier() throws Exception {
-        Artifact artifact = mock(Artifact.class);
 
         final ModuleBinaries binaries = new ModuleBinaries();
 
@@ -401,14 +367,13 @@ class ModuleSetAssemblyPhaseTest {
         binaries.setOutputFileNameMapping("artifact");
         binaries.setAttachmentClassifier("test");
 
-        final MavenProject project = createProject("group", "artifact", "version", null);
-        project.setArtifact(artifact);
+        final Project project = createProject("group", "artifact", "version", null);
 
-        final Set<MavenProject> projects = singleton(project);
+        final Set<Project> projects = singleton(project);
 
         try {
 
-            this.phase.addModuleBinaries(null, null, binaries, projects, null, null);
+            this.phase.addModuleBinaries(null, null, binaries, projects, null, mockConfigSource());
 
             fail("Should throw an invalid configuration exception because of module with missing attachment.");
         } catch (final InvalidAssemblerConfigurationException e) {
@@ -422,12 +387,9 @@ class ModuleSetAssemblyPhaseTest {
 
     @Test
     void addModuleBinariesShouldAddOneModuleArtifactAndNoDeps() throws Exception {
-        Artifact artifact = mock(Artifact.class);
         final File artifactFile = File.createTempFile("junit", null, temporaryFolder);
-        when(artifact.getGroupId()).thenReturn("GROUPID");
-        when(artifact.getFile()).thenReturn(artifactFile);
 
-        final AssemblerConfigurationSource configSource = mock(AssemblerConfigurationSource.class);
+        final AssemblerConfigurationSource configSource = mockConfigSource();
         when(configSource.getFinalName()).thenReturn("final-name");
 
         final Archiver archiver = mock(Archiver.class);
@@ -443,10 +405,10 @@ class ModuleSetAssemblyPhaseTest {
         binaries.setOutputDirectory("out");
         binaries.setOutputFileNameMapping("artifact");
 
-        final MavenProject project = createProject("group", "artifact", "version", null);
-        project.setArtifact(artifact);
+        final Project project = createProject("group", "artifact", "version", null);
+        TestStubs.mainArtifactFile(session, project, artifactFile);
 
-        final Set<MavenProject> projects = singleton(project);
+        final Set<Project> projects = singleton(project);
 
         when(dependencyResolver.resolveDependencySets(
                         isNull(), isNull(), any(AssemblerConfigurationSource.class), anyList()))
@@ -457,7 +419,7 @@ class ModuleSetAssemblyPhaseTest {
 
         // result of easymock migration, should be assert of expected result instead of verifying methodcalls
         verify(configSource, atLeastOnce()).getFinalName();
-        verify(configSource, atLeastOnce()).getMavenSession();
+        verify(configSource, atLeastOnce()).getSession();
         verify(configSource, atLeastOnce()).getProject();
 
         verify(dependencyResolver)
@@ -473,7 +435,7 @@ class ModuleSetAssemblyPhaseTest {
 
     @Test
     void addModuleArtifactShouldThrowExceptionWhenArtifactFileIsNull() throws Exception {
-        Artifact artifact = mock(Artifact.class);
+        AssemblyArtifact artifact = TestStubs.artifact("group", "artifact", "version");
         try {
             this.phase.addModuleArtifact(artifact, null, null, null, null);
 
@@ -485,15 +447,13 @@ class ModuleSetAssemblyPhaseTest {
 
     @Test
     void addModuleArtifactShouldAddOneArtifact() throws Exception {
-        Artifact artifact = mock(Artifact.class);
-        when(artifact.getGroupId()).thenReturn("GROUPID");
         final File artifactFile = File.createTempFile("junit", null, temporaryFolder);
-        when(artifact.getFile()).thenReturn(artifactFile);
+        AssemblyArtifact artifact =
+                TestStubs.artifact("GROUPID", "artifact", "version", "jar", "compile", artifactFile);
 
-        final MavenProject project = createProject("group", "artifact", "version", null);
-        project.setArtifact(artifact);
+        final Project project = createProject("group", "artifact", "version", null);
 
-        final AssemblerConfigurationSource configSource = mock(AssemblerConfigurationSource.class);
+        final AssemblerConfigurationSource configSource = mockConfigSource();
         when(configSource.getFinalName()).thenReturn("final-name");
 
         final Archiver archiver = mock(Archiver.class);
@@ -512,7 +472,7 @@ class ModuleSetAssemblyPhaseTest {
 
         // result of easymock migration, should be assert of expected result instead of verifying methodcalls
         verify(configSource, atLeastOnce()).getFinalName();
-        verify(configSource, atLeastOnce()).getMavenSession();
+        verify(configSource, atLeastOnce()).getSession();
         verify(configSource, atLeastOnce()).getProject();
 
         verify(archiver).addFile(artifactFile, "out/artifact", 511);
@@ -530,16 +490,13 @@ class ModuleSetAssemblyPhaseTest {
 
     @Test
     void addModuleSourceFileSetsShouldAddOneSourceDirectory() throws Exception {
-        final MavenProject project = createProject("group", "artifact", "version", null);
+        final Project project = createProject("group", "artifact", "version", null);
 
-        final AssemblerConfigurationSource configSource = mock(AssemblerConfigurationSource.class);
+        final AssemblerConfigurationSource configSource = mockConfigSource();
         when(configSource.getFinalName()).thenReturn("final-name");
         when(configSource.getProject()).thenReturn(project);
-        Artifact artifact = mock(Artifact.class);
-        when(artifact.getGroupId()).thenReturn("GROUPID");
-        project.setArtifact(artifact);
 
-        final Set<MavenProject> projects = singleton(project);
+        final Set<Project> projects = singleton(project);
 
         final FileSet fs = new FileSet();
         fs.setDirectory("/src");
@@ -562,7 +519,7 @@ class ModuleSetAssemblyPhaseTest {
         verify(configSource).getArchiveBaseDirectory();
         verify(configSource, atLeastOnce()).getFinalName();
         verify(configSource, atLeastOnce()).getProject();
-        verify(configSource, atLeastOnce()).getMavenSession();
+        verify(configSource, atLeastOnce()).getSession();
 
         verify(archiver).getOverrideDirectoryMode();
         verify(archiver).getOverrideFileMode();
@@ -570,19 +527,18 @@ class ModuleSetAssemblyPhaseTest {
 
     @Test
     void getModuleProjectsShouldReturnNothingWhenReactorContainsOnlyCurrentProject() throws Exception {
-        final MavenProject project = createProject("group", "artifact", "version", null);
+        final Project project = createProject("group", "artifact", "version", null);
 
-        final List<MavenProject> projects = Collections.singletonList(project);
+        final List<Project> projects = Collections.singletonList(project);
 
-        final AssemblerConfigurationSource configSource = mock(AssemblerConfigurationSource.class);
+        final AssemblerConfigurationSource configSource = mockConfigSource();
         when(configSource.getProject()).thenReturn(project);
         when(configSource.getReactorProjects()).thenReturn(projects);
 
         final ModuleSet moduleSet = new ModuleSet();
         moduleSet.setIncludeSubModules(true);
 
-        final Set<MavenProject> moduleProjects =
-                ModuleSetAssemblyPhase.getModuleProjects(moduleSet, configSource, logger);
+        final Set<Project> moduleProjects = ModuleSetAssemblyPhase.getModuleProjects(moduleSet, configSource, logger);
 
         assertTrue(moduleProjects.isEmpty());
 
@@ -593,22 +549,21 @@ class ModuleSetAssemblyPhaseTest {
 
     @Test
     void getModuleProjectsShouldReturnNothingWhenReactorContainsTwoSiblingProjects() throws Exception {
-        final MavenProject project = createProject("group", "artifact", "version", null);
-        final MavenProject project2 = createProject("group", "artifact2", "version", null);
+        final Project project = createProject("group", "artifact", "version", null);
+        final Project project2 = createProject("group", "artifact2", "version", null);
 
-        final List<MavenProject> projects = new ArrayList<>();
+        final List<Project> projects = new ArrayList<>();
         projects.add(project);
         projects.add(project2);
 
-        final AssemblerConfigurationSource configSource = mock(AssemblerConfigurationSource.class);
+        final AssemblerConfigurationSource configSource = mockConfigSource();
         when(configSource.getReactorProjects()).thenReturn(projects);
         when(configSource.getProject()).thenReturn(project);
 
         final ModuleSet moduleSet = new ModuleSet();
         moduleSet.setIncludeSubModules(true);
 
-        final Set<MavenProject> moduleProjects =
-                ModuleSetAssemblyPhase.getModuleProjects(moduleSet, configSource, logger);
+        final Set<Project> moduleProjects = ModuleSetAssemblyPhase.getModuleProjects(moduleSet, configSource, logger);
 
         assertTrue(moduleProjects.isEmpty());
 
@@ -619,22 +574,20 @@ class ModuleSetAssemblyPhaseTest {
 
     @Test
     void getModuleProjectsShouldUseAllReactorProjectsRegardlessOfReactorOrder() throws Exception {
-        final MavenProject parent = createProject("group", "parent", "version", null);
+        final Project parent = createProject("group", "parent", "version", null);
 
-        final Model aggregatorModel = new Model();
-        aggregatorModel.setGroupId("group");
-        aggregatorModel.setArtifactId("aggregator");
-        aggregatorModel.setVersion("version");
+        final Project aggregator = TestStubs.project(
+                TestStubs.model("group", "aggregator", "version"),
+                new File(temporaryFolder, "aggregator/pom.xml").toPath(),
+                null,
+                "jar");
 
-        final MavenProject aggregator = new MavenProject(aggregatorModel);
-        aggregator.setFile(new File(temporaryFolder, "aggregator/pom.xml"));
+        final Project module = createProject("group", "module", "version", aggregator);
+        final Project distribution = createProject("group", "distribution", "version", aggregator);
 
-        final MavenProject module = createProject("group", "module", "version", aggregator);
-        final MavenProject distribution = createProject("group", "distribution", "version", aggregator);
+        final List<Project> projects = Arrays.asList(parent, aggregator, module, distribution);
 
-        final List<MavenProject> projects = Arrays.asList(parent, aggregator, module, distribution);
-
-        final AssemblerConfigurationSource configSource = mock(AssemblerConfigurationSource.class);
+        final AssemblerConfigurationSource configSource = mockConfigSource();
         when(configSource.getReactorProjects()).thenReturn(projects);
         when(configSource.getProject()).thenReturn(distribution);
 
@@ -642,8 +595,7 @@ class ModuleSetAssemblyPhaseTest {
         moduleSet.setUseAllReactorProjects(true);
         moduleSet.setIncludeSubModules(true);
 
-        final Set<MavenProject> moduleProjects =
-                ModuleSetAssemblyPhase.getModuleProjects(moduleSet, configSource, logger);
+        final Set<Project> moduleProjects = ModuleSetAssemblyPhase.getModuleProjects(moduleSet, configSource, logger);
 
         assertEquals(projects, new ArrayList<>(moduleProjects));
         verify(configSource).getReactorProjects();
@@ -651,26 +603,25 @@ class ModuleSetAssemblyPhaseTest {
 
     @Test
     void getModuleProjectsShouldReturnModuleOfCurrentProject() throws Exception {
-        final MavenProject project = createProject("group", "artifact", "version", null);
-        final MavenProject project2 = createProject("group", "artifact2", "version", project);
+        final Project project = createProject("group", "artifact", "version", null);
+        final Project project2 = createProject("group", "artifact2", "version", project);
 
-        final List<MavenProject> projects = new ArrayList<>();
+        final List<Project> projects = new ArrayList<>();
         projects.add(project);
         projects.add(project2);
 
-        final AssemblerConfigurationSource configSource = mock(AssemblerConfigurationSource.class);
+        final AssemblerConfigurationSource configSource = mockConfigSource();
         when(configSource.getReactorProjects()).thenReturn(projects);
         when(configSource.getProject()).thenReturn(project);
 
         final ModuleSet moduleSet = new ModuleSet();
         moduleSet.setIncludeSubModules(true);
 
-        final Set<MavenProject> moduleProjects =
-                ModuleSetAssemblyPhase.getModuleProjects(moduleSet, configSource, logger);
+        final Set<Project> moduleProjects = ModuleSetAssemblyPhase.getModuleProjects(moduleSet, configSource, logger);
 
         assertFalse(moduleProjects.isEmpty());
 
-        final MavenProject result = moduleProjects.iterator().next();
+        final Project result = moduleProjects.iterator().next();
 
         assertEquals("artifact2", result.getArtifactId());
 
@@ -681,28 +632,27 @@ class ModuleSetAssemblyPhaseTest {
 
     @Test
     void getModuleProjectsShouldReturnDescendentModulesOfCurrentProject() throws Exception {
-        final MavenProject project = createProject("group", "artifact", "version", null);
-        final MavenProject project2 = createProject("group", "artifact2", "version", project);
-        final MavenProject project3 = createProject("group", "artifact3", "version", project2);
+        final Project project = createProject("group", "artifact", "version", null);
+        final Project project2 = createProject("group", "artifact2", "version", project);
+        final Project project3 = createProject("group", "artifact3", "version", project2);
 
-        final List<MavenProject> projects = new ArrayList<>();
+        final List<Project> projects = new ArrayList<>();
         projects.add(project);
         projects.add(project2);
         projects.add(project3);
 
-        final AssemblerConfigurationSource configSource = mock(AssemblerConfigurationSource.class);
+        final AssemblerConfigurationSource configSource = mockConfigSource();
         when(configSource.getReactorProjects()).thenReturn(projects);
         when(configSource.getProject()).thenReturn(project);
 
         final ModuleSet moduleSet = new ModuleSet();
         moduleSet.setIncludeSubModules(true);
 
-        final Set<MavenProject> moduleProjects =
-                ModuleSetAssemblyPhase.getModuleProjects(moduleSet, configSource, logger);
+        final Set<Project> moduleProjects = ModuleSetAssemblyPhase.getModuleProjects(moduleSet, configSource, logger);
 
         assertEquals(2, moduleProjects.size());
 
-        final List<MavenProject> check = new ArrayList<>();
+        final List<Project> check = new ArrayList<>();
         check.add(project2);
         check.add(project3);
 
@@ -713,58 +663,10 @@ class ModuleSetAssemblyPhaseTest {
         verify(configSource, atLeastOnce()).getProject();
     }
 
-    @Test
-    void getModuleProjectsShouldExcludeModuleAndDescendentsTransitively() throws Exception {
-        final MavenProject project = createProject("group", "artifact", "version", null);
-
-        Artifact artifact1 = mock(Artifact.class);
-        project.setArtifact(artifact1);
-
-        final MavenProject project2 = createProject("group", "artifact2", "version", project);
-        Artifact artifact2 = mock(Artifact.class);
-        when(artifact2.getGroupId()).thenReturn("group");
-        when(artifact2.getArtifactId()).thenReturn("artifact2");
-        lenient().when(artifact2.getId()).thenReturn("group:artifact2:version:jar");
-        lenient().when(artifact2.getDependencyConflictId()).thenReturn("group:artifact2:jar");
-        project2.setArtifact(artifact2);
-
-        final MavenProject project3 = createProject("group", "artifact3", "version", project2);
-        Artifact artifact3 = mock(Artifact.class);
-        when(artifact3.getGroupId()).thenReturn("group");
-        when(artifact3.getArtifactId()).thenReturn("artifact3");
-        lenient().when(artifact3.getId()).thenReturn("group:artifact3:version:jar");
-        lenient().when(artifact3.getDependencyConflictId()).thenReturn("group:artifact3:jar");
-        when(artifact3.getDependencyTrail()).thenReturn(Arrays.asList(project2.getId(), project.getId()));
-        project3.setArtifact(artifact3);
-
-        final List<MavenProject> projects = new ArrayList<>();
-        projects.add(project);
-        projects.add(project2);
-        projects.add(project3);
-
-        final AssemblerConfigurationSource configSource = mock(AssemblerConfigurationSource.class);
-        when(configSource.getReactorProjects()).thenReturn(projects);
-        when(configSource.getProject()).thenReturn(project);
-
-        final ModuleSet moduleSet = new ModuleSet();
-        moduleSet.setIncludeSubModules(true);
-
-        moduleSet.addExclude("group:artifact2");
-
-        final Set<MavenProject> moduleProjects =
-                ModuleSetAssemblyPhase.getModuleProjects(moduleSet, configSource, logger);
-
-        assertTrue(moduleProjects.isEmpty());
-
-        // result of easymock migration, should be assert of expected result instead of verifying methodcalls
-        verify(configSource).getReactorProjects();
-        verify(configSource, atLeastOnce()).getProject();
-    }
-
-    private void verifyResultIs(final List<MavenProject> check, final Set<MavenProject> moduleProjects) {
+    private void verifyResultIs(final List<Project> check, final Set<Project> moduleProjects) {
         boolean failed = false;
 
-        final Set<MavenProject> checkTooMany = new HashSet<>(moduleProjects);
+        final Set<Project> checkTooMany = new HashSet<>(moduleProjects);
         check.forEach(checkTooMany::remove);
 
         if (!checkTooMany.isEmpty()) {
@@ -772,12 +674,12 @@ class ModuleSetAssemblyPhaseTest {
 
             System.out.println("Unexpected projects in output: ");
 
-            for (final MavenProject project : checkTooMany) {
+            for (final Project project : checkTooMany) {
                 System.out.println(project.getId());
             }
         }
 
-        final Set<MavenProject> checkTooFew = new HashSet<>(check);
+        final Set<Project> checkTooFew = new HashSet<>(check);
         checkTooFew.removeAll(moduleProjects);
 
         if (!checkTooFew.isEmpty()) {
@@ -785,7 +687,7 @@ class ModuleSetAssemblyPhaseTest {
 
             System.out.println("Expected projects missing from output: ");
 
-            for (final MavenProject project : checkTooMany) {
+            for (final Project project : checkTooMany) {
                 System.out.println(project.getId());
             }
         }
@@ -795,28 +697,46 @@ class ModuleSetAssemblyPhaseTest {
         }
     }
 
-    private MavenProject createProject(
-            final String groupId, final String artifactId, final String version, final MavenProject parentProject) {
-        final Model model = new Model();
-        model.setArtifactId(artifactId);
-        model.setGroupId(groupId);
-        model.setVersion(version);
+    private final List<Object[]> modulesOfProjects = new ArrayList<>();
 
-        final MavenProject project = new MavenProject(model);
+    private Project createProject(
+            final String groupId, final String artifactId, final String version, final Project parentProject) {
+        return createProject(groupId, artifactId, version, parentProject, "jar");
+    }
 
-        File pomFile;
+    private Project createProject(
+            final String groupId,
+            final String artifactId,
+            final String version,
+            final Project parentProject,
+            final String packaging) {
+        final Model model = TestStubs.model(groupId, artifactId, version).withPackaging(packaging);
+
+        final File pomFile;
         if (parentProject == null) {
             final File basedir = temporaryFolder;
             pomFile = new File(basedir, "pom.xml");
         } else {
-            final File parentBase = parentProject.getBasedir();
+            final File parentBase = parentProject.getBasedir().toFile();
             pomFile = new File(parentBase, artifactId + "/pom.xml");
-
-            parentProject.getModel().addModule(artifactId);
-            project.setParent(parentProject);
         }
 
-        project.setFile(pomFile);
+        final Project project = TestStubs.project(model, pomFile.toPath(), null, packaging);
+
+        // a module is declared in the model of its parent, which is an immutable object
+        final List<String> modules = new ArrayList<>();
+        lenient().when(project.getModel()).thenAnswer(invocation -> model.withModules(modules));
+        modulesOfProjects.add(new Object[] {project, modules});
+
+        if (parentProject != null) {
+            for (Object[] entry : modulesOfProjects) {
+                if (entry[0] == parentProject) {
+                    @SuppressWarnings("unchecked")
+                    final List<String> parentModules = (List<String>) entry[1];
+                    parentModules.add(artifactId);
+                }
+            }
+        }
 
         return project;
     }

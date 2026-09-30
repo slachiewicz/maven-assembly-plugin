@@ -22,10 +22,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
 
-import org.apache.maven.artifact.Artifact;
-import org.apache.maven.artifact.DefaultArtifact;
-import org.apache.maven.artifact.handler.DefaultArtifactHandler;
-import org.apache.maven.artifact.versioning.VersionRange;
+import org.apache.maven.plugins.assembly.testutils.TestStubs;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -35,79 +32,30 @@ class ResolutionManagementInfoTest {
     @Test
     void addSingleArtifactWithReplacemen() throws Exception {
         ResolutionManagementInfo rmi = new ResolutionManagementInfo();
-        Artifact a1 = new DefaultArtifact(
-                "groupid",
-                "1",
-                VersionRange.createFromVersion("1.0"),
-                "test",
-                "jar",
-                null,
-                new DefaultArtifactHandler());
+        AssemblyArtifact a1 = TestStubs.artifact("groupid", "1", "1.0", "jar", "test", null);
         rmi.addArtifacts(Collections.singleton(a1));
-        Artifact a2 = new DefaultArtifact(
-                "groupid",
-                "1",
-                VersionRange.createFromVersion("1.0"),
-                "compile",
-                "jar",
-                null,
-                new DefaultArtifactHandler());
+        AssemblyArtifact a2 = TestStubs.artifact("groupid", "1", "1.0", "jar", "compile", null);
         rmi.addArtifacts(Collections.singleton(a2));
         assertEquals(1, rmi.getArtifacts().size());
-        Artifact next = rmi.getArtifacts().iterator().next();
+        AssemblyArtifact next = rmi.getArtifacts().iterator().next();
         assertEquals("compile", next.getScope());
     }
 
     @Test
     void addMultiArtifactWithReplacemen() throws Exception {
         ResolutionManagementInfo rmi = new ResolutionManagementInfo();
-        Artifact a1 = new DefaultArtifact(
-                "groupid",
-                "a1",
-                VersionRange.createFromVersion("1.0"),
-                "test",
-                "jar",
-                null,
-                new DefaultArtifactHandler());
-        Artifact a2 = new DefaultArtifact(
-                "groupid",
-                "a2",
-                VersionRange.createFromVersion("1.0"),
-                "test",
-                "jar",
-                null,
-                new DefaultArtifactHandler());
-        Artifact a3 = new DefaultArtifact(
-                "groupid",
-                "a3",
-                VersionRange.createFromVersion("1.0"),
-                "test",
-                "jar",
-                null,
-                new DefaultArtifactHandler());
+        AssemblyArtifact a1 = TestStubs.artifact("groupid", "a1", "1.0", "jar", "test", null);
+        AssemblyArtifact a2 = TestStubs.artifact("groupid", "a2", "1.0", "jar", "test", null);
+        AssemblyArtifact a3 = TestStubs.artifact("groupid", "a3", "1.0", "jar", "test", null);
         rmi.addArtifacts(new HashSet<>(Arrays.asList(a1, a2, a3)));
-        Artifact b2 = new DefaultArtifact(
-                "groupid",
-                "a2",
-                VersionRange.createFromVersion("1.0"),
-                "compile",
-                "jar",
-                null,
-                new DefaultArtifactHandler());
-        Artifact b3 = new DefaultArtifact(
-                "groupid",
-                "a3",
-                VersionRange.createFromVersion("1.0"),
-                "compile",
-                "jar",
-                null,
-                new DefaultArtifactHandler());
+        AssemblyArtifact b2 = TestStubs.artifact("groupid", "a2", "1.0", "jar", "compile", null);
+        AssemblyArtifact b3 = TestStubs.artifact("groupid", "a3", "1.0", "jar", "compile", null);
         rmi.addArtifacts(new HashSet<>(Arrays.asList(b2, b3)));
         assertEquals(3, rmi.getArtifacts().size());
         int compile = 0;
         int test = 0;
-        for (Artifact artifact : rmi.getArtifacts()) {
-            if (Artifact.SCOPE_COMPILE.equals(artifact.getScope())) {
+        for (AssemblyArtifact artifact : rmi.getArtifacts()) {
+            if (AssemblyArtifact.SCOPE_COMPILE.equals(artifact.getScope())) {
                 compile++;
             } else {
                 test++;

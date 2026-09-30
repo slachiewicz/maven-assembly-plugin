@@ -30,9 +30,9 @@ import java.nio.file.Path;
 import java.util.Collections;
 
 import org.apache.commons.io.IOUtils;
-import org.apache.maven.archiver.MavenArchiveConfiguration;
-import org.apache.maven.model.Model;
-import org.apache.maven.project.MavenProject;
+import org.apache.maven.api.Project;
+import org.apache.maven.plugins.assembly.testutils.TestStubs;
+import org.apache.maven.shared.archiver.MavenArchiveConfiguration;
 import org.codehaus.plexus.archiver.jar.JarArchiver;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -57,15 +57,15 @@ class ManifestCreationFinalizerTest {
 
     @Test
     void shouldDoNothingWhenArchiverIsNotJarArchiver() throws Exception {
-        MavenProject project = new MavenProject(new Model());
+        Project project = TestStubs.project("group", "artifact", "1.0");
         MavenArchiveConfiguration config = new MavenArchiveConfiguration();
 
-        new ManifestCreationFinalizer(null, project, config).finalizeArchiveCreation(null);
+        new ManifestCreationFinalizer(TestStubs.session(), project, config).finalizeArchiveCreation(null);
     }
 
     @Test
     void shouldAddManifestWhenArchiverIsJarArchiver() throws Exception {
-        MavenProject project = new MavenProject(new Model());
+        Project project = TestStubs.project("group", "artifact", "1.0");
         MavenArchiveConfiguration config = new MavenArchiveConfiguration();
 
         File tempDir = temporaryFolder;
@@ -74,11 +74,12 @@ class ManifestCreationFinalizerTest {
 
         Files.write(manifestFile, Collections.singletonList("Main-Class: Stuff\n"), StandardCharsets.UTF_8);
 
-        config.setManifestFile(manifestFile.toFile());
+        config.setManifestFile(manifestFile);
 
         JarArchiver archiver = new JarArchiver();
 
-        archiver.setArchiveFinalizers(Collections.singletonList(new ManifestCreationFinalizer(null, project, config)));
+        archiver.setArchiveFinalizers(
+                Collections.singletonList(new ManifestCreationFinalizer(TestStubs.session(), project, config)));
 
         File file = File.createTempFile("junit", null, temporaryFolder);
 
@@ -102,7 +103,7 @@ class ManifestCreationFinalizerTest {
 
     @Test
     void shouldAddManifestEntriesWhenArchiverIsJarArchiver() throws Exception {
-        MavenProject project = new MavenProject(new Model());
+        Project project = TestStubs.project("group", "artifact", "1.0");
         MavenArchiveConfiguration config = new MavenArchiveConfiguration();
 
         String testKey = "Test-Key";
@@ -112,7 +113,8 @@ class ManifestCreationFinalizerTest {
 
         JarArchiver archiver = new JarArchiver();
 
-        archiver.setArchiveFinalizers(Collections.singletonList(new ManifestCreationFinalizer(null, project, config)));
+        archiver.setArchiveFinalizers(
+                Collections.singletonList(new ManifestCreationFinalizer(TestStubs.session(), project, config)));
 
         File file = File.createTempFile("junit", null, temporaryFolder);
 

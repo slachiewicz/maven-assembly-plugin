@@ -18,9 +18,6 @@
  */
 package org.apache.maven.plugins.assembly.io;
 
-import javax.inject.Named;
-import javax.inject.Singleton;
-
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -34,6 +31,9 @@ import java.util.List;
 import java.util.Set;
 
 import org.apache.commons.io.input.XmlStreamReader;
+import org.apache.maven.api.Project;
+import org.apache.maven.api.di.Named;
+import org.apache.maven.api.di.Singleton;
 import org.apache.maven.plugins.assembly.AssemblerConfigurationSource;
 import org.apache.maven.plugins.assembly.InvalidAssemblerConfigurationException;
 import org.apache.maven.plugins.assembly.interpolation.AssemblyExpressionEvaluator;
@@ -50,7 +50,7 @@ import org.apache.maven.plugins.assembly.model.io.xpp3.AssemblyXpp3Writer;
 import org.apache.maven.plugins.assembly.model.io.xpp3.ComponentXpp3Reader;
 import org.apache.maven.plugins.assembly.resolved.AssemblyId;
 import org.apache.maven.plugins.assembly.utils.InterpolationConstants;
-import org.apache.maven.project.MavenProject;
+import org.apache.maven.plugins.assembly.utils.ProjectUtils;
 import org.codehaus.plexus.interpolation.PrefixAwareRecursionInterceptor;
 import org.codehaus.plexus.interpolation.RecursionInterceptor;
 import org.codehaus.plexus.interpolation.fixed.FixedStringSearchInterpolator;
@@ -70,12 +70,15 @@ import org.slf4j.LoggerFactory;
 public class DefaultAssemblyReader implements AssemblyReader {
     private static final Logger LOGGER = LoggerFactory.getLogger(DefaultAssemblyReader.class);
 
-    public static FixedStringSearchInterpolator createProjectInterpolator(MavenProject project) {
+    public static FixedStringSearchInterpolator createProjectInterpolator(Project project) {
         // CHECKSTYLE_OFF: LineLength
         return FixedStringSearchInterpolator.create(
                 new PrefixedPropertiesValueSource(
-                        InterpolationConstants.PROJECT_PROPERTIES_PREFIXES, project.getProperties(), true),
-                new PrefixedObjectValueSource(InterpolationConstants.PROJECT_PREFIXES, project, true));
+                        InterpolationConstants.PROJECT_PROPERTIES_PREFIXES, ProjectUtils.properties(project), true),
+                new PrefixedObjectValueSource(
+                        InterpolationConstants.PROJECT_PREFIXES, ProjectUtils.interpolationRoot(project), true),
+                new PrefixedPropertiesValueSource(
+                        InterpolationConstants.PROJECT_PREFIXES, ProjectUtils.interpolationExtras(project), true));
         // CHECKSTYLE_ON: LineLength
     }
 
@@ -260,7 +263,7 @@ public class DefaultAssemblyReader implements AssemblyReader {
             throws AssemblyReadException, InvalidAssemblerConfigurationException {
         Assembly assembly;
 
-        final MavenProject project = configSource.getProject();
+        final Project project = configSource.getProject();
         try {
 
             InterpolationState is = new InterpolationState();

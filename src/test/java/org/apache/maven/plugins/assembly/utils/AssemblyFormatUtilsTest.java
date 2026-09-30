@@ -21,16 +21,15 @@ package org.apache.maven.plugins.assembly.utils;
 import java.io.File;
 import java.util.Properties;
 
-import org.apache.maven.artifact.Artifact;
-import org.apache.maven.artifact.handler.ArtifactHandler;
-import org.apache.maven.execution.MavenSession;
-import org.apache.maven.model.Build;
-import org.apache.maven.model.Model;
+import org.apache.maven.api.Project;
+import org.apache.maven.api.Session;
+import org.apache.maven.api.model.Build;
 import org.apache.maven.plugins.assembly.AssemblerConfigurationSource;
 import org.apache.maven.plugins.assembly.archive.DefaultAssemblyArchiverTest;
+import org.apache.maven.plugins.assembly.artifact.AssemblyArtifact;
 import org.apache.maven.plugins.assembly.format.AssemblyFormattingException;
 import org.apache.maven.plugins.assembly.model.Assembly;
-import org.apache.maven.project.MavenProject;
+import org.apache.maven.plugins.assembly.testutils.TestStubs;
 import org.codehaus.plexus.interpolation.fixed.FixedStringSearchInterpolator;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -254,22 +253,19 @@ class AssemblyFormatUtilsTest {
 
     @Test
     void evalFileNameMappingShouldResolveArtifactIdAndBaseVersionInOutDirUseArtifactInfoWithValidMainProject() {
-        final MavenProject mainProject = createProject("group", "main", "1", null);
+        final Project mainProject = createProject("group", "main", "1", null);
 
         final String artifactVersion = "2-20070807.112233-1";
         final String artifactBaseVersion = "2-SNAPSHOT";
-        final MavenProject artifactProject = createProject("group", "artifact", artifactVersion, null);
+        final Project artifactProject = createProject("group", "artifact", artifactVersion, null);
 
-        Artifact artifact = mock(Artifact.class);
-        when(artifact.getGroupId()).thenReturn("group");
-        when(artifact.getBaseVersion()).thenReturn(artifactBaseVersion);
+        final AssemblyArtifact artifact = new AssemblyArtifact(
+                null, "group", null, null, artifactBaseVersion, null, "jar", "jar", "compile", false, null, null, null);
 
-        artifactProject.setArtifact(artifact);
-
-        final MavenSession session = mock(MavenSession.class);
+        final Session session = TestStubs.session();
 
         final AssemblerConfigurationSource cs = mock(AssemblerConfigurationSource.class);
-        when(cs.getMavenSession()).thenReturn(session);
+        when(cs.getSession()).thenReturn(session);
         DefaultAssemblyArchiverTest.setupInterpolators(cs, mainProject);
 
         final String result = AssemblyFormatUtils.evaluateFileNameMapping(
@@ -278,13 +274,13 @@ class AssemblyFormatUtilsTest {
                 mainProject,
                 null,
                 cs,
-                AssemblyFormatUtils.moduleProjectInterpolator(null),
-                AssemblyFormatUtils.artifactProjectInterpolator(artifactProject));
+                AssemblyFormatUtils.moduleProjectInterpolator(session, null),
+                AssemblyFormatUtils.artifactProjectInterpolator(session, artifactProject));
 
         assertEquals("artifact-2-SNAPSHOT", result);
 
         // result of easymock migration, should be assert of expected result instead of verifying methodcalls
-        verify(cs).getMavenSession();
+        verify(cs).getSession();
     }
 
     @Test
@@ -466,9 +462,9 @@ class AssemblyFormatUtilsTest {
             final String extension,
             final String checkValue,
             final Properties projectProperties) {
-        final MavenProject mainProject = createProject(groupId, artifactId, version, projectProperties);
-        final MavenProject artifactProject = createProject("unknown", "unknown", "unknown", null);
-        final MavenProject moduleProject = createProject("unknown", "unknown", "unknown", null);
+        final Project mainProject = createProject(groupId, artifactId, version, projectProperties);
+        final Project artifactProject = createProject("unknown", "unknown", "unknown", null);
+        final Project moduleProject = createProject("unknown", "unknown", "unknown", null);
 
         verifyEvalFileNameMapping(
                 expression, classifier, extension, mainProject, moduleProject, artifactProject, checkValue);
@@ -484,10 +480,10 @@ class AssemblyFormatUtilsTest {
             final String extension,
             final String checkValue,
             final Properties projectProperties) {
-        final MavenProject artifactProject = createProject(groupId, artifactId, version, projectProperties);
+        final Project artifactProject = createProject(groupId, artifactId, version, projectProperties);
 
-        final MavenProject mainProject = createProject("unknown", "unknown", "unknown", null);
-        final MavenProject moduleProject = createProject("unknown", "unknown", "unknown", null);
+        final Project mainProject = createProject("unknown", "unknown", "unknown", null);
+        final Project moduleProject = createProject("unknown", "unknown", "unknown", null);
 
         verifyEvalFileNameMapping(
                 expression, classifier, extension, mainProject, moduleProject, artifactProject, checkValue);
@@ -503,17 +499,26 @@ class AssemblyFormatUtilsTest {
             final String extension,
             final String checkValue,
             final Properties projectProperties) {
-        final MavenProject moduleProject = createProject(groupId, artifactId, version, projectProperties);
+        final Project moduleProject = createProject(groupId, artifactId, version, projectProperties);
 
-        final MavenProject mainProject = createProject("unknown", "unknown", "unknown", null);
-        final MavenProject artifactProject = createProject("unknown", "unknown", "unknown", null);
+        final Project mainProject = createProject("unknown", "unknown", "unknown", null);
+        final Project artifactProject = createProject("unknown", "unknown", "unknown", null);
 
         verifyEvalFileNameMapping(
                 expression, classifier, extension, mainProject, moduleProject, artifactProject, checkValue);
     }
 
-    private MavenProject createProject(
+    private Project createProject(
             String groupId, String artifactId, String version, final Properties projectProperties) {
+        return createProject(groupId, artifactId, version, projectProperties, null);
+    }
+
+    private Project createProject(
+            String groupId,
+            String artifactId,
+            String version,
+            final Properties projectProperties,
+            final String finalName) {
         if (artifactId == null) {
             artifactId = "artifact";
         }
@@ -526,41 +531,64 @@ class AssemblyFormatUtilsTest {
             version = "version";
         }
 
-        final Model model = new Model();
-        model.setGroupId(groupId);
-        model.setArtifactId(artifactId);
-        model.setVersion(version);
+        org.apache.maven.api.model.Model model = TestStubs.model(groupId, artifactId, version);
 
-        model.setProperties(projectProperties);
+        if (projectProperties != null) {
+            model = model.withProperties(TestStubs.toMap(projectProperties));
+        }
 
-        return new MavenProject(model);
+        if (finalName != null) {
+            model = model.withBuild(Build.newBuilder().finalName(finalName).build());
+        }
+
+        return TestStubs.project(model, null, null, "jar");
     }
 
     private void verifyEvalFileNameMapping(
             final String expression,
             final String classifier,
             final String extension,
-            final MavenProject mainProject,
-            final MavenProject moduleProject,
-            final MavenProject artifactProject,
+            final Project mainProject,
+            final Project moduleProject,
+            final Project artifactProject,
             final String checkValue) {
 
-        Artifact artifactMock = mock(Artifact.class);
-        when(artifactMock.getGroupId()).thenReturn(artifactProject.getGroupId());
-        when(artifactMock.getClassifier()).thenReturn(classifier);
-        ArtifactHandler artifactHandler = mock(ArtifactHandler.class);
-        when(artifactHandler.getExtension()).thenReturn(extension);
-        when(artifactMock.getArtifactHandler()).thenReturn(artifactHandler);
+        // the artifact id and the version are left out so that the ones of the artifact project are used
+        final AssemblyArtifact artifactMock = new AssemblyArtifact(
+                null,
+                artifactProject.getGroupId(),
+                null,
+                null,
+                null,
+                classifier,
+                "jar",
+                extension,
+                "compile",
+                false,
+                null,
+                null,
+                null);
 
-        Artifact moduleArtifactMock = mock(Artifact.class);
-        when(moduleArtifactMock.getGroupId()).thenReturn(moduleProject.getGroupId());
+        final AssemblyArtifact moduleArtifactMock = new AssemblyArtifact(
+                null,
+                moduleProject.getGroupId(),
+                null,
+                null,
+                null,
+                null,
+                "jar",
+                "jar",
+                "compile",
+                false,
+                null,
+                null,
+                null);
 
-        final MavenSession session = mock(MavenSession.class);
-        when(session.getUserProperties()).thenReturn(new Properties());
-        when(session.getSystemProperties()).thenReturn(System.getProperties());
+        final Session session = TestStubs.session();
+        when(session.getSystemProperties()).thenReturn(TestStubs.toMap(System.getProperties()));
 
         final AssemblerConfigurationSource cs = mock(AssemblerConfigurationSource.class);
-        when(cs.getMavenSession()).thenReturn(session);
+        when(cs.getSession()).thenReturn(session);
 
         DefaultAssemblyArchiverTest.setupInterpolators(cs, mainProject);
 
@@ -570,13 +598,13 @@ class AssemblyFormatUtilsTest {
                 mainProject,
                 moduleArtifactMock,
                 cs,
-                AssemblyFormatUtils.moduleProjectInterpolator(moduleProject),
-                AssemblyFormatUtils.artifactProjectInterpolator(artifactProject));
+                AssemblyFormatUtils.moduleProjectInterpolator(session, moduleProject),
+                AssemblyFormatUtils.artifactProjectInterpolator(session, artifactProject));
 
         assertEquals(checkValue, result);
 
         // result of easymock migration, should be assert of expected result instead of verifying methodcalls
-        verify(cs).getMavenSession();
+        verify(cs).getSession();
     }
 
     private void verifyOutputDir(
@@ -596,17 +624,10 @@ class AssemblyFormatUtilsTest {
             final Properties properties,
             final String checkValue)
             throws AssemblyFormattingException {
-        final MavenProject project = createProject(groupId, artifactId, version, properties);
+        final Project project = createProject(groupId, artifactId, version, properties, projectFinalName);
 
-        if (projectFinalName != null) {
-            final Build build = new Build();
-            build.setFinalName(projectFinalName);
-
-            project.getModel().setBuild(build);
-        }
-
-        final MavenProject moduleProject = createProject("unknown", "unknown", "unknown", null);
-        final MavenProject artifactProject = createProject("unknown", "unknown", "unknown", null);
+        final Project moduleProject = createProject("unknown", "unknown", "unknown", null);
+        final Project artifactProject = createProject("unknown", "unknown", "unknown", null);
 
         verifyOutputDir(outDir, finalName, project, moduleProject, artifactProject, checkValue);
     }
@@ -622,17 +643,10 @@ class AssemblyFormatUtilsTest {
             final Properties properties,
             final String checkValue)
             throws AssemblyFormattingException {
-        final MavenProject project = createProject(groupId, artifactId, version, properties);
+        final Project project = createProject(groupId, artifactId, version, properties, projectFinalName);
 
-        if (projectFinalName != null) {
-            final Build build = new Build();
-            build.setFinalName(projectFinalName);
-
-            project.getModel().setBuild(build);
-        }
-
-        final MavenProject mainProject = createProject("unknown", "unknown", "unknown", null);
-        final MavenProject artifactProject = createProject("unknown", "unknown", "unknown", null);
+        final Project mainProject = createProject("unknown", "unknown", "unknown", null);
+        final Project artifactProject = createProject("unknown", "unknown", "unknown", null);
 
         verifyOutputDir(outDir, finalName, mainProject, project, artifactProject, checkValue);
     }
@@ -648,17 +662,10 @@ class AssemblyFormatUtilsTest {
             final Properties properties,
             final String checkValue)
             throws AssemblyFormattingException {
-        final MavenProject project = createProject(groupId, artifactId, version, properties);
+        final Project project = createProject(groupId, artifactId, version, properties, projectFinalName);
 
-        if (projectFinalName != null) {
-            final Build build = new Build();
-            build.setFinalName(projectFinalName);
-
-            project.getModel().setBuild(build);
-        }
-
-        final MavenProject moduleProject = createProject("unknown", "unknown", "unknown", null);
-        final MavenProject mainProject = createProject("unknown", "unknown", "unknown", null);
+        final Project moduleProject = createProject("unknown", "unknown", "unknown", null);
+        final Project mainProject = createProject("unknown", "unknown", "unknown", null);
 
         verifyOutputDir(outDir, finalName, mainProject, moduleProject, project, checkValue);
     }
@@ -666,18 +673,17 @@ class AssemblyFormatUtilsTest {
     private void verifyOutputDir(
             final String outDir,
             final String finalName,
-            final MavenProject mainProject,
-            final MavenProject moduleProject,
-            final MavenProject artifactProject,
+            final Project mainProject,
+            final Project moduleProject,
+            final Project artifactProject,
             final String checkValue)
             throws AssemblyFormattingException {
 
-        final MavenSession session = mock(MavenSession.class);
-        when(session.getUserProperties()).thenReturn(new Properties());
-        when(session.getSystemProperties()).thenReturn(System.getProperties());
+        final Session session = TestStubs.session();
+        when(session.getSystemProperties()).thenReturn(TestStubs.toMap(System.getProperties()));
 
         final AssemblerConfigurationSource cs = mock(AssemblerConfigurationSource.class);
-        when(cs.getMavenSession()).thenReturn(session);
+        when(cs.getSession()).thenReturn(session);
 
         DefaultAssemblyArchiverTest.setupInterpolators(cs, mainProject);
 
@@ -685,13 +691,13 @@ class AssemblyFormatUtilsTest {
                 outDir,
                 finalName,
                 cs,
-                AssemblyFormatUtils.moduleProjectInterpolator(moduleProject),
-                AssemblyFormatUtils.artifactProjectInterpolator(artifactProject));
+                AssemblyFormatUtils.moduleProjectInterpolator(session, moduleProject),
+                AssemblyFormatUtils.artifactProjectInterpolator(session, artifactProject));
 
         assertEquals(checkValue, result);
 
         // result of easymock migration, should be assert of expected result instead of verifying methodcalls
-        verify(cs).getMavenSession();
+        verify(cs).getSession();
     }
 
     private void verifyDistroName(
@@ -723,23 +729,19 @@ class AssemblyFormatUtilsTest {
 
     @Test
     void groupIdPathArtifactProjectInterpolator() {
-        Artifact artifact = mock(Artifact.class);
-        when(artifact.getFile()).thenReturn(new File("dir", "artifactId.jar"));
+        final Session session = TestStubs.session();
+        final Project project = TestStubs.project("a.b.c", "artifactId", "1");
+        TestStubs.mainArtifactFile(session, project, new File("dir", "artifactId.jar"));
 
-        MavenProject project = mock(MavenProject.class);
-        when(project.getGroupId()).thenReturn("a.b.c");
-        when(project.getArtifact()).thenReturn(artifact);
-
-        FixedStringSearchInterpolator interpolator = AssemblyFormatUtils.artifactProjectInterpolator(project);
+        FixedStringSearchInterpolator interpolator = AssemblyFormatUtils.artifactProjectInterpolator(session, project);
         assertEquals("a/b/c", interpolator.interpolate("${artifact.groupIdPath}"));
         assertEquals("a/b/c/artifactId.jar", interpolator.interpolate("${artifact.groupIdPath}/${artifact.file.name}"));
     }
 
     @Test
     void groupIdPathArtifactInterpolator() {
-        Artifact artifact = mock(Artifact.class);
-        when(artifact.getGroupId()).thenReturn("a.b.c");
-        when(artifact.getFile()).thenReturn(new File("dir", "artifactId.jar"));
+        AssemblyArtifact artifact =
+                TestStubs.artifact("a.b.c", "artifactId", "1", "jar", "compile", new File("dir", "artifactId.jar"));
 
         FixedStringSearchInterpolator interpolator = AssemblyFormatUtils.artifactInterpolator(artifact);
         assertEquals("a/b/c", interpolator.interpolate("${artifact.groupIdPath}"));

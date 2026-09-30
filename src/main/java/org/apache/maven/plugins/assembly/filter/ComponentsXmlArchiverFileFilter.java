@@ -18,8 +18,6 @@
  */
 package org.apache.maven.plugins.assembly.filter;
 
-import javax.inject.Named;
-
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
@@ -33,6 +31,7 @@ import java.util.Map;
 
 import org.apache.commons.io.input.XmlStreamReader;
 import org.apache.commons.io.output.XmlStreamWriter;
+import org.apache.maven.api.di.Named;
 import org.codehaus.plexus.archiver.Archiver;
 import org.codehaus.plexus.archiver.ArchiverException;
 import org.codehaus.plexus.archiver.ResourceIterator;

@@ -31,11 +31,11 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 
-import org.apache.maven.artifact.Artifact;
-import org.apache.maven.model.Model;
+import org.apache.maven.api.Project;
 import org.apache.maven.plugins.assembly.AssemblerConfigurationSource;
 import org.apache.maven.plugins.assembly.InvalidAssemblerConfigurationException;
 import org.apache.maven.plugins.assembly.archive.DefaultAssemblyArchiverTest;
+import org.apache.maven.plugins.assembly.artifact.AssemblyArtifact;
 import org.apache.maven.plugins.assembly.interpolation.AssemblyInterpolator;
 import org.apache.maven.plugins.assembly.model.Assembly;
 import org.apache.maven.plugins.assembly.model.Component;
@@ -46,7 +46,7 @@ import org.apache.maven.plugins.assembly.model.FileSet;
 import org.apache.maven.plugins.assembly.model.io.xpp3.AssemblyXpp3Writer;
 import org.apache.maven.plugins.assembly.model.io.xpp3.ComponentXpp3Reader;
 import org.apache.maven.plugins.assembly.model.io.xpp3.ComponentXpp3Writer;
-import org.apache.maven.project.MavenProject;
+import org.apache.maven.plugins.assembly.testutils.TestStubs;
 import org.codehaus.plexus.interpolation.fixed.FixedStringSearchInterpolator;
 import org.codehaus.plexus.interpolation.fixed.InterpolationState;
 import org.junit.jupiter.api.Test;
@@ -201,19 +201,19 @@ public class DefaultAssemblyReaderTest {
         final Assembly assembly = new Assembly();
 
         DependencySet ds = new DependencySet();
-        ds.setScope(Artifact.SCOPE_RUNTIME);
+        ds.setScope(AssemblyArtifact.SCOPE_RUNTIME);
 
         assembly.addDependencySet(ds);
 
         ds = new DependencySet();
-        ds.setScope(Artifact.SCOPE_COMPILE);
+        ds.setScope(AssemblyArtifact.SCOPE_COMPILE);
 
         assembly.addDependencySet(ds);
 
         final Component component = new Component();
 
         ds = new DependencySet();
-        ds.setScope(Artifact.SCOPE_SYSTEM);
+        ds.setScope(AssemblyArtifact.SCOPE_SYSTEM);
 
         component.addDependencySet(ds);
 
@@ -224,9 +224,9 @@ public class DefaultAssemblyReaderTest {
         assertNotNull(depSets);
         assertEquals(3, depSets.size());
 
-        assertEquals(Artifact.SCOPE_RUNTIME, depSets.get(0).getScope());
-        assertEquals(Artifact.SCOPE_COMPILE, depSets.get(1).getScope());
-        assertEquals(Artifact.SCOPE_SYSTEM, depSets.get(2).getScope());
+        assertEquals(AssemblyArtifact.SCOPE_RUNTIME, depSets.get(0).getScope());
+        assertEquals(AssemblyArtifact.SCOPE_COMPILE, depSets.get(1).getScope());
+        assertEquals(AssemblyArtifact.SCOPE_SYSTEM, depSets.get(2).getScope());
     }
 
     @Test
@@ -288,7 +288,7 @@ public class DefaultAssemblyReaderTest {
 
         final File basedir = componentFile.getParentFile();
 
-        final MavenProject project = new MavenProject();
+        final Project project = TestStubs.project("unknown", "unknown", "0");
 
         when(configSource.getProject()).thenReturn(project);
         when(configSource.getBasedir()).thenReturn(basedir);
@@ -337,12 +337,7 @@ public class DefaultAssemblyReaderTest {
 
         when(configSource.getBasedir()).thenReturn(basedir);
 
-        final Model model = new Model();
-        model.setGroupId("group");
-        model.setArtifactId("artifact");
-        model.setVersion("version");
-
-        final MavenProject project = new MavenProject(model);
+        final Project project = TestStubs.project("group", "artifact", "version");
 
         when(configSource.getProject()).thenReturn(project);
 
@@ -387,12 +382,7 @@ public class DefaultAssemblyReaderTest {
 
         when(configSource.getBasedir()).thenReturn(basedir);
 
-        final Model model = new Model();
-        model.setGroupId("group");
-        model.setArtifactId("artifact");
-        model.setVersion("version");
-
-        final MavenProject project = new MavenProject(model);
+        final Project project = TestStubs.project("group", "artifact", "version");
         when(configSource.getProject()).thenReturn(project);
 
         DefaultAssemblyArchiverTest.setupInterpolators(configSource);
@@ -437,12 +427,7 @@ public class DefaultAssemblyReaderTest {
 
         when(configSource.getBasedir()).thenReturn(basedir);
 
-        final Model model = new Model();
-        model.setGroupId("group");
-        model.setArtifactId("artifact");
-        model.setVersion("version");
-
-        final MavenProject project = new MavenProject(model);
+        final Project project = TestStubs.project("group", "artifact", "version");
 
         when(configSource.getProject()).thenReturn(project);
 
@@ -477,12 +462,7 @@ public class DefaultAssemblyReaderTest {
 
         when(configSource.getBasedir()).thenReturn(basedir);
 
-        final Model model = new Model();
-        model.setGroupId("group");
-        model.setArtifactId("artifact");
-        model.setVersion("version");
-
-        final MavenProject project = new MavenProject(model);
+        final Project project = TestStubs.project("group", "artifact", "version");
 
         when(configSource.getProject()).thenReturn(project);
 
@@ -507,7 +487,8 @@ public class DefaultAssemblyReaderTest {
 
         when(configSource.getBasedir()).thenReturn(basedir);
 
-        when(configSource.getProject()).thenReturn(new MavenProject(new Model()));
+        final Project stubProject = TestStubs.project("unknown", "unknown", "0");
+        when(configSource.getProject()).thenReturn(stubProject);
 
         DefaultAssemblyArchiverTest.setupInterpolators(configSource);
 
@@ -527,7 +508,8 @@ public class DefaultAssemblyReaderTest {
 
         when(configSource.getBasedir()).thenReturn(basedir);
 
-        when(configSource.getProject()).thenReturn(new MavenProject(new Model()));
+        final Project stubProject = TestStubs.project("unknown", "unknown", "0");
+        when(configSource.getProject()).thenReturn(stubProject);
 
         DefaultAssemblyArchiverTest.setupInterpolators(configSource);
 
@@ -758,7 +740,8 @@ public class DefaultAssemblyReaderTest {
         }
 
         if (!ignoreMissing) {
-            when(configSource.getProject()).thenReturn(new MavenProject(new Model())); // .atLeastOnce();
+            final Project stubProject = TestStubs.project("unknown", "unknown", "0");
+            when(configSource.getProject()).thenReturn(stubProject); // .atLeastOnce();
 
             DefaultAssemblyArchiverTest.setupInterpolators(configSource);
         }

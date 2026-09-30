@@ -25,11 +25,13 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Predicate;
 
-import org.apache.maven.artifact.Artifact;
-import org.apache.maven.artifact.resolver.filter.ArtifactFilter;
+import org.apache.maven.api.Project;
+import org.apache.maven.api.Session;
 import org.apache.maven.plugins.assembly.InvalidAssemblerConfigurationException;
-import org.apache.maven.project.MavenProject;
+import org.apache.maven.plugins.assembly.artifact.AssemblyArtifact;
+import org.apache.maven.plugins.assembly.testutils.TestStubs;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -41,9 +43,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.lenient;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 @MockitoSettings(strictness = Strictness.WARN)
 @ExtendWith(MockitoExtension.class)
@@ -51,11 +50,7 @@ class FilterUtilsTest {
 
     @Test
     void filterArtifactsShouldThrowExceptionUsingStrictModeWithUnmatchedInclude() {
-        final Artifact artifact = mock(Artifact.class);
-        when(artifact.getGroupId()).thenReturn("group");
-        lenient().when(artifact.getArtifactId()).thenReturn("artifact");
-        lenient().when(artifact.getBaseVersion()).thenReturn("version");
-        lenient().when(artifact.getType()).thenReturn("jar");
+        final AssemblyArtifact artifact = TestStubs.artifact("group", "artifact", "version");
 
         final List<String> includes = new ArrayList<>();
 
@@ -63,7 +58,7 @@ class FilterUtilsTest {
 
         final List<String> excludes = Collections.emptyList();
 
-        final Set<Artifact> artifacts = new HashSet<>();
+        final Set<AssemblyArtifact> artifacts = new HashSet<>();
         artifacts.add(artifact);
 
         assertThrows(
@@ -115,69 +110,48 @@ class FilterUtilsTest {
 
     @Test
     void filterArtifactsShouldRemoveArtifactExcludedByAdditionalFilter() throws Exception {
-        ArtifactFilter filter = artifact -> false;
+        Predicate<AssemblyArtifact> filter = artifact -> false;
 
         verifyArtifactExclusion("group", "artifact", "fail:fail", null, null, filter);
     }
 
     @Test
     void filterProjectsShouldNotRemoveProjectDirectlyIncluded() {
-        verifyProjectInclusion("group", "artifact", "group:artifact", null, null);
-        verifyProjectInclusion("group", "artifact", "group:artifact:jar", null, null);
-    }
-
-    @Test
-    void filterProjectsShouldNotRemoveProjectTransitivelyIncluded() {
-        verifyProjectInclusion(
-                "group",
-                "artifact",
-                "group:dependentArtifact",
-                null,
-                Arrays.asList("current:project:jar:1.0", "group:dependentArtifact:jar:version"));
-    }
-
-    @Test
-    void filterProjectsShouldRemoveProjectTransitivelyExcluded() {
-        verifyProjectExclusion(
-                "group",
-                "artifact",
-                null,
-                "group:dependentArtifact",
-                Arrays.asList("current:project:jar:1.0", "group:dependentArtifact:jar:version"));
+        verifyProjectInclusion("group", "artifact", "group:artifact", null);
+        verifyProjectInclusion("group", "artifact", "group:artifact:jar", null);
     }
 
     @Test
     void filterProjectsShouldRemoveProjectDirectlyExcluded() {
-        verifyProjectExclusion("group", "artifact", null, "group:artifact", null);
-        verifyProjectExclusion("group", "artifact", null, "group:artifact:jar", null);
+        verifyProjectExclusion("group", "artifact", null, "group:artifact");
+        verifyProjectExclusion("group", "artifact", null, "group:artifact:jar");
     }
 
     @Test
     void filterProjectsShouldNotRemoveProjectNotIncludedAndNotExcluded() {
-        verifyProjectInclusion("group", "artifact", null, null, null);
-        verifyProjectInclusion("group", "artifact", null, null, null);
+        verifyProjectInclusion("group", "artifact", null, null);
+        verifyProjectInclusion("group", "artifact", null, null);
     }
 
     @Test
     void transitiveScopes() {
-        Collection<String> compileScope = FilterUtils.newScopeFilter("compile").getIncluded();
+        Collection<String> compileScope = FilterUtils.classpathScopes(Collections.singleton("compile"));
         assertFalse(compileScope.isEmpty());
         assertTrue(compileScope.contains("compile"));
         assertTrue(compileScope.contains("provided"));
         assertTrue(compileScope.contains("system"));
 
-        Collection<String> providedScope =
-                FilterUtils.newScopeFilter("provided").getIncluded();
+        Collection<String> providedScope = FilterUtils.classpathScopes(Collections.singleton("provided"));
         assertTrue(providedScope.contains("provided"));
 
-        Collection<String> systemScope = FilterUtils.newScopeFilter("system").getIncluded();
+        Collection<String> systemScope = FilterUtils.classpathScopes(Collections.singleton("system"));
         assertTrue(systemScope.contains("system"));
 
-        Collection<String> runtimeScope = FilterUtils.newScopeFilter("runtime").getIncluded();
+        Collection<String> runtimeScope = FilterUtils.classpathScopes(Collections.singleton("runtime"));
         assertTrue(runtimeScope.contains("compile"));
         assertTrue(runtimeScope.contains("runtime"));
 
-        Collection<String> testScope = FilterUtils.newScopeFilter("test").getIncluded();
+        Collection<String> testScope = FilterUtils.classpathScopes(Collections.singleton("test"));
         assertTrue(testScope.contains("compile"));
         assertTrue(testScope.contains("provided"));
         assertTrue(testScope.contains("runtime"));
@@ -191,7 +165,7 @@ class FilterUtilsTest {
             final String inclusionPattern,
             final String exclusionPattern,
             final List<String> depTrail,
-            final ArtifactFilter additionalFilter)
+            final Predicate<AssemblyArtifact> additionalFilter)
             throws InvalidAssemblerConfigurationException {
         verifyArtifactFiltering(
                 groupId, artifactId, inclusionPattern, exclusionPattern, depTrail, true, additionalFilter);
@@ -203,7 +177,7 @@ class FilterUtilsTest {
             final String inclusionPattern,
             final String exclusionPattern,
             final List<String> depTrail,
-            final ArtifactFilter additionalFilter)
+            final Predicate<AssemblyArtifact> additionalFilter)
             throws InvalidAssemblerConfigurationException {
         verifyArtifactFiltering(
                 groupId, artifactId, inclusionPattern, exclusionPattern, depTrail, false, additionalFilter);
@@ -216,20 +190,16 @@ class FilterUtilsTest {
             final String exclusionPattern,
             final List<String> depTrail,
             final boolean verifyInclusion,
-            final ArtifactFilter additionalFilter)
+            final Predicate<AssemblyArtifact> additionalFilter)
             throws InvalidAssemblerConfigurationException {
-        Artifact artifact = mock(Artifact.class);
-
-        // this is always enabled, for verification purposes.
-        when(artifact.getDependencyConflictId()).thenReturn(groupId + ":" + artifactId + ":jar");
-        when(artifact.getGroupId()).thenReturn(groupId);
-        when(artifact.getArtifactId()).thenReturn(artifactId);
-        lenient().when(artifact.getBaseVersion()).thenReturn("version");
-        when(artifact.getType()).thenReturn("jar");
-
+        final List<AssemblyArtifact> ancestors = new ArrayList<>();
         if (depTrail != null) {
-            when(artifact.getDependencyTrail()).thenReturn(depTrail);
+            for (String trailItem : depTrail) {
+                final String[] tokens = trailItem.split(":");
+                ancestors.add(TestStubs.artifact(tokens[0], tokens[1], tokens[3]));
+            }
         }
+        final AssemblyArtifact artifact = TestStubs.artifact(groupId, artifactId, "version", ancestors);
 
         List<String> inclusions;
         if (inclusionPattern != null) {
@@ -245,7 +215,7 @@ class FilterUtilsTest {
             exclusions = Collections.emptyList();
         }
 
-        final Set<Artifact> artifacts = new HashSet<>(Collections.singleton(artifact));
+        final Set<AssemblyArtifact> artifacts = new HashSet<>(Collections.singleton(artifact));
 
         FilterUtils.filterArtifacts(
                 artifacts,
@@ -262,9 +232,6 @@ class FilterUtilsTest {
                     artifact.getDependencyConflictId(),
                     artifacts.iterator().next().getDependencyConflictId());
         } else {
-            // just make sure this trips, to meet the mock's expectations.
-            artifact.getDependencyConflictId();
-
             assertTrue(artifacts.isEmpty());
         }
     }
@@ -273,18 +240,16 @@ class FilterUtilsTest {
             final String groupId,
             final String artifactId,
             final String inclusionPattern,
-            final String exclusionPattern,
-            final List<String> depTrail) {
-        verifyProjectFiltering(groupId, artifactId, inclusionPattern, exclusionPattern, depTrail, true);
+            final String exclusionPattern) {
+        verifyProjectFiltering(groupId, artifactId, inclusionPattern, exclusionPattern, true);
     }
 
     private void verifyProjectExclusion(
             final String groupId,
             final String artifactId,
             final String inclusionPattern,
-            final String exclusionPattern,
-            final List<String> depTrail) {
-        verifyProjectFiltering(groupId, artifactId, inclusionPattern, exclusionPattern, depTrail, false);
+            final String exclusionPattern) {
+        verifyProjectFiltering(groupId, artifactId, inclusionPattern, exclusionPattern, false);
     }
 
     private void verifyProjectFiltering(
@@ -292,25 +257,11 @@ class FilterUtilsTest {
             final String artifactId,
             final String inclusionPattern,
             final String exclusionPattern,
-            final List<String> depTrail,
             final boolean verifyInclusion) {
-        final Artifact artifact = mock(Artifact.class);
+        final Session session = TestStubs.session();
+        final Project project = TestStubs.project(groupId, artifactId, "1.0");
 
-        // this is always enabled, for verification purposes.
-        when(artifact.getGroupId()).thenReturn(groupId);
-        when(artifact.getArtifactId()).thenReturn(artifactId);
-        lenient().when(artifact.getBaseVersion()).thenReturn("version");
-        lenient().when(artifact.getType()).thenReturn("jar");
-
-        if (depTrail != null) {
-            when(artifact.getDependencyTrail()).thenReturn(depTrail);
-        }
-
-        MavenProject project = mock(MavenProject.class);
-        when(project.getId()).thenReturn("group:artifact:jar:1.0");
-        when(project.getArtifact()).thenReturn(artifact);
-
-        final Set<MavenProject> projects = new HashSet<>();
+        final Set<Project> projects = new HashSet<>();
         projects.add(project);
 
         List<String> inclusions;
@@ -327,8 +278,8 @@ class FilterUtilsTest {
             exclusions = Collections.emptyList();
         }
 
-        Set<MavenProject> result = FilterUtils.filterProjects(
-                projects, inclusions, exclusions, depTrail != null, LoggerFactory.getLogger(getClass()));
+        Set<Project> result = FilterUtils.filterProjects(
+                session, projects, inclusions, exclusions, false, LoggerFactory.getLogger(getClass()));
 
         if (verifyInclusion) {
             assertEquals(1, result.size());

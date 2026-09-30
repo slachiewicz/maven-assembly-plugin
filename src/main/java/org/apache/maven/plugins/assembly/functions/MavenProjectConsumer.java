@@ -18,11 +18,11 @@
  */
 package org.apache.maven.plugins.assembly.functions;
 
-import org.apache.maven.project.MavenProject;
+import org.apache.maven.api.Project;
 
 /**
  *
  */
 public interface MavenProjectConsumer {
-    void accept(MavenProject project);
+    void accept(Project project);
 }

@@ -20,11 +20,12 @@ package org.apache.maven.plugins.assembly.interpolation;
 
 import java.util.Properties;
 
-import org.apache.maven.model.Build;
-import org.apache.maven.model.Model;
+import org.apache.maven.api.Project;
+import org.apache.maven.api.model.Build;
+import org.apache.maven.api.model.Model;
 import org.apache.maven.plugins.assembly.AssemblerConfigurationSource;
 import org.apache.maven.plugins.assembly.testutils.PojoConfigSource;
-import org.apache.maven.project.MavenProject;
+import org.apache.maven.plugins.assembly.testutils.TestStubs;
 import org.codehaus.plexus.interpolation.fixed.FixedStringSearchInterpolator;
 import org.codehaus.plexus.interpolation.fixed.PropertiesBasedValueSource;
 import org.junit.jupiter.api.Test;
@@ -45,13 +46,13 @@ class AssemblyExpressionEvaluatorTest {
 
     @Test
     void shouldResolveModelGroupId() throws Exception {
-        final Model model = new Model();
-        model.setArtifactId("artifact-id");
-        model.setGroupId("group.id");
-        model.setVersion("1");
-        model.setPackaging("jar");
+        final Model.Builder model = Model.newBuilder();
+        model.artifactId("artifact-id");
+        model.groupId("group.id");
+        model.version("1");
+        model.packaging("jar");
 
-        configSourceStub.setMavenProject(new MavenProject(model));
+        configSourceStub.setMavenProject(TestStubs.project(model.build(), null, null, "jar"));
         setupInterpolation();
 
         final Object result = new AssemblyExpressionEvaluator(configSourceStub).evaluate("assembly.${groupId}");
@@ -67,18 +68,18 @@ class AssemblyExpressionEvaluatorTest {
 
     @Test
     void shouldResolveModelPropertyBeforeModelGroupId() throws Exception {
-        final Model model = new Model();
-        model.setArtifactId("artifact-id");
-        model.setGroupId("group.id");
-        model.setVersion("1");
-        model.setPackaging("jar");
+        final Model.Builder model = Model.newBuilder();
+        model.artifactId("artifact-id");
+        model.groupId("group.id");
+        model.version("1");
+        model.packaging("jar");
 
         final Properties props = new Properties();
         props.setProperty("groupId", "other.id");
 
-        model.setProperties(props);
+        model.properties(TestStubs.toMap(props));
 
-        configSourceStub.setMavenProject(new MavenProject(model));
+        configSourceStub.setMavenProject(TestStubs.project(model.build(), null, null, "jar"));
         setupInterpolation();
 
         final Object result = new AssemblyExpressionEvaluator(configSourceStub).evaluate("assembly.${groupId}");
@@ -88,16 +89,16 @@ class AssemblyExpressionEvaluatorTest {
 
     @Test
     void shouldResolveContextValueBeforeModelPropertyOrModelGroupIdInAssemblyId() throws Exception {
-        final Model model = new Model();
-        model.setArtifactId("artifact-id");
-        model.setGroupId("group.id");
-        model.setVersion("1");
-        model.setPackaging("jar");
+        final Model.Builder model = Model.newBuilder();
+        model.artifactId("artifact-id");
+        model.groupId("group.id");
+        model.version("1");
+        model.packaging("jar");
 
         final Properties props = new Properties();
         props.setProperty("groupId", "other.id");
 
-        model.setProperties(props);
+        model.properties(TestStubs.toMap(props));
 
         final Properties execProps = new Properties();
         execProps.setProperty("groupId", "still.another.id");
@@ -108,7 +109,8 @@ class AssemblyExpressionEvaluatorTest {
         when(cs.getCommandLinePropsInterpolator()).thenReturn(FixedStringSearchInterpolator.create(cliProps));
         when(cs.getRepositoryInterpolator()).thenReturn(FixedStringSearchInterpolator.create());
         when(cs.getEnvInterpolator()).thenReturn(FixedStringSearchInterpolator.create());
-        when(cs.getProject()).thenReturn(new MavenProject(model));
+        final Project stubProject = TestStubs.project(model.build(), null, null, "jar");
+        when(cs.getProject()).thenReturn(stubProject);
 
         final Object result = new AssemblyExpressionEvaluator(cs).evaluate("assembly.${groupId}");
 
@@ -123,13 +125,13 @@ class AssemblyExpressionEvaluatorTest {
 
     @Test
     void shouldReturnUnchangedInputForUnresolvedExpression() throws Exception {
-        final Model model = new Model();
-        model.setArtifactId("artifact-id");
-        model.setGroupId("group.id");
-        model.setVersion("1");
-        model.setPackaging("jar");
+        final Model.Builder model = Model.newBuilder();
+        model.artifactId("artifact-id");
+        model.groupId("group.id");
+        model.version("1");
+        model.packaging("jar");
 
-        configSourceStub.setMavenProject(new MavenProject(model));
+        configSourceStub.setMavenProject(TestStubs.project(model.build(), null, null, "jar"));
         setupInterpolation();
 
         final Object result = new AssemblyExpressionEvaluator(configSourceStub).evaluate("assembly.${unresolved}");
@@ -139,13 +141,12 @@ class AssemblyExpressionEvaluatorTest {
 
     @Test
     void shouldInterpolateMultiDotProjectExpression() throws Exception {
-        final Build build = new Build();
-        build.setFinalName("final-name");
+        final Build build = Build.newBuilder().finalName("final-name").build();
 
-        final Model model = new Model();
-        model.setBuild(build);
+        final Model.Builder model = Model.newBuilder();
+        model.build(build);
 
-        configSourceStub.setMavenProject(new MavenProject(model));
+        configSourceStub.setMavenProject(TestStubs.project(model.build(), null, null, "jar"));
         setupInterpolation();
 
         final Object result =

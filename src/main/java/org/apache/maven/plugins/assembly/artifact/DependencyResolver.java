@@ -22,7 +22,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import org.apache.maven.artifact.Artifact;
 import org.apache.maven.plugins.assembly.AssemblerConfigurationSource;
 import org.apache.maven.plugins.assembly.model.Assembly;
 import org.apache.maven.plugins.assembly.model.DependencySet;
@@ -36,14 +35,14 @@ import org.apache.maven.plugins.assembly.model.ModuleSet;
  */
 public interface DependencyResolver {
 
-    Map<DependencySet, Set<Artifact>> resolveDependencySets(
+    Map<DependencySet, Set<AssemblyArtifact>> resolveDependencySets(
             Assembly assembly,
             ModuleSet moduleSet,
             AssemblerConfigurationSource configSource,
             List<DependencySet> dependencySets)
             throws DependencyResolutionException;
 
-    Map<DependencySet, Set<Artifact>> resolveDependencySets(
+    Map<DependencySet, Set<AssemblyArtifact>> resolveDependencySets(
             Assembly assembly, AssemblerConfigurationSource configSource, List<DependencySet> dependencySets)
             throws DependencyResolutionException;
 }

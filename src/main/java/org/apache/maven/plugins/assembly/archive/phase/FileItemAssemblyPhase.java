@@ -18,9 +18,6 @@
  */
 package org.apache.maven.plugins.assembly.archive.phase;
 
-import javax.inject.Named;
-import javax.inject.Singleton;
-
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -31,6 +28,8 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 
+import org.apache.maven.api.di.Named;
+import org.apache.maven.api.di.Singleton;
 import org.apache.maven.plugins.assembly.AssemblerConfigurationSource;
 import org.apache.maven.plugins.assembly.InvalidAssemblerConfigurationException;
 import org.apache.maven.plugins.assembly.archive.ArchiveCreationException;
@@ -111,8 +110,8 @@ public class FileItemAssemblyPhase implements AssemblyArchiverPhase, PhaseOrder 
                     outputDirectory1,
                     configSource.getFinalName(),
                     configSource,
-                    AssemblyFormatUtils.moduleProjectInterpolator(configSource.getProject()),
-                    AssemblyFormatUtils.artifactProjectInterpolator(null));
+                    AssemblyFormatUtils.moduleProjectInterpolator(configSource.getSession(), configSource.getProject()),
+                    AssemblyFormatUtils.artifactProjectInterpolator(configSource.getSession(), null));
 
             String target;
 

@@ -18,10 +18,6 @@
  */
 package org.apache.maven.plugins.assembly.archive.phase;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
-
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -32,13 +28,17 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import org.apache.maven.artifact.Artifact;
+import org.apache.maven.api.Project;
+import org.apache.maven.api.di.Inject;
+import org.apache.maven.api.di.Named;
+import org.apache.maven.api.di.Singleton;
 import org.apache.maven.plugins.assembly.AssemblerConfigurationSource;
 import org.apache.maven.plugins.assembly.InvalidAssemblerConfigurationException;
 import org.apache.maven.plugins.assembly.archive.ArchiveCreationException;
 import org.apache.maven.plugins.assembly.archive.task.AddArtifactTask;
 import org.apache.maven.plugins.assembly.archive.task.AddDependencySetsTask;
 import org.apache.maven.plugins.assembly.archive.task.AddFileSetsTask;
+import org.apache.maven.plugins.assembly.artifact.AssemblyArtifact;
 import org.apache.maven.plugins.assembly.artifact.DependencyResolutionException;
 import org.apache.maven.plugins.assembly.artifact.DependencyResolver;
 import org.apache.maven.plugins.assembly.format.AssemblyFormattingException;
@@ -56,8 +56,6 @@ import org.apache.maven.plugins.assembly.utils.AssemblyFormatUtils;
 import org.apache.maven.plugins.assembly.utils.FilterUtils;
 import org.apache.maven.plugins.assembly.utils.ProjectUtils;
 import org.apache.maven.plugins.assembly.utils.TypeConversionUtils;
-import org.apache.maven.project.MavenProject;
-import org.apache.maven.project.ProjectBuilder;
 import org.codehaus.plexus.archiver.Archiver;
 import org.codehaus.plexus.interpolation.fixed.FixedStringSearchInterpolator;
 import org.slf4j.Logger;
@@ -84,16 +82,13 @@ public class ModuleSetAssemblyPhase implements AssemblyArchiverPhase, PhaseOrder
      */
     private static final String LINE_SEPARATOR = System.getProperty("line.separator");
 
-    private final ProjectBuilder projectBuilder;
-
     private final DependencyResolver dependencyResolver;
 
     /**
      * Injected ctor.
      */
     @Inject
-    public ModuleSetAssemblyPhase(final ProjectBuilder projectBuilder, final DependencyResolver dependencyResolver) {
-        this.projectBuilder = requireNonNull(projectBuilder);
+    public ModuleSetAssemblyPhase(final DependencyResolver dependencyResolver) {
         this.dependencyResolver = requireNonNull(dependencyResolver);
     }
 
@@ -118,16 +113,16 @@ public class ModuleSetAssemblyPhase implements AssemblyArchiverPhase, PhaseOrder
         return depSets;
     }
 
-    public static Set<MavenProject> getModuleProjects(
+    public static Set<Project> getModuleProjects(
             final ModuleSet moduleSet, final AssemblerConfigurationSource configSource, final Logger logger)
             throws ArchiveCreationException {
-        final List<MavenProject> reactorProjects = configSource.getReactorProjects();
-        final Set<MavenProject> moduleProjects;
+        final List<Project> reactorProjects = configSource.getReactorProjects();
+        final Set<Project> moduleProjects;
 
         if (moduleSet.isUseAllReactorProjects()) {
             moduleProjects = new LinkedHashSet<>(reactorProjects);
         } else {
-            final MavenProject project = configSource.getProject();
+            final Project project = configSource.getProject();
             try {
                 moduleProjects = ProjectUtils.getProjectModules(
                         project, reactorProjects, moduleSet.isIncludeSubModules(), logger);
@@ -138,7 +133,12 @@ public class ModuleSetAssemblyPhase implements AssemblyArchiverPhase, PhaseOrder
         }
 
         return FilterUtils.filterProjects(
-                moduleProjects, moduleSet.getIncludes(), moduleSet.getExcludes(), true, logger);
+                configSource.getSession(),
+                moduleProjects,
+                moduleSet.getIncludes(),
+                moduleSet.getExcludes(),
+                true,
+                logger);
     }
 
     /**
@@ -156,7 +156,7 @@ public class ModuleSetAssemblyPhase implements AssemblyArchiverPhase, PhaseOrder
                             InvalidAssemblerConfigurationException, DependencyResolutionException {
                 validate(resolvedModule, configSource);
 
-                final Set<MavenProject> moduleProjects = getModuleProjects(resolvedModule, configSource, LOGGER);
+                final Set<Project> moduleProjects = getModuleProjects(resolvedModule, configSource, LOGGER);
 
                 final ModuleSources sources = resolvedModule.getSources();
                 addModuleSourceFileSets(sources, moduleProjects, archiver, configSource);
@@ -178,7 +178,7 @@ public class ModuleSetAssemblyPhase implements AssemblyArchiverPhase, PhaseOrder
                     + "and <excludes/> sections to fine-tune the modules included.");
         }
 
-        final List<MavenProject> projects = configSource.getReactorProjects();
+        final List<Project> projects = configSource.getReactorProjects();
         if (projects != null
                 && projects.size() > 1
                 && projects.indexOf(configSource.getProject()) == 0
@@ -206,7 +206,7 @@ public class ModuleSetAssemblyPhase implements AssemblyArchiverPhase, PhaseOrder
             final Assembly assembly,
             ModuleSet moduleSet,
             final ModuleBinaries binaries,
-            final Set<MavenProject> projects,
+            final Set<Project> projects,
             final Archiver archiver,
             final AssemblerConfigurationSource configSource)
             throws ArchiveCreationException, AssemblyFormattingException, InvalidAssemblerConfigurationException,
@@ -217,26 +217,26 @@ public class ModuleSetAssemblyPhase implements AssemblyArchiverPhase, PhaseOrder
 
         final String classifier = binaries.getAttachmentClassifier();
 
-        final Set<MavenProject> moduleProjects = new LinkedHashSet<>();
+        final Set<Project> moduleProjects = new LinkedHashSet<>();
         if (classifier == null) {
             MavenProjects.select(projects, "pom", log(LOGGER), addTo(moduleProjects));
         } else {
             moduleProjects.addAll(projects);
         }
 
-        final Map<MavenProject, Artifact> chosenModuleArtifacts = new HashMap<>();
+        final Map<Project, AssemblyArtifact> chosenModuleArtifacts = new HashMap<>();
 
-        for (final MavenProject project : moduleProjects) {
-            Artifact artifact;
+        for (final Project project : moduleProjects) {
+            AssemblyArtifact artifact;
 
             if (classifier == null) {
                 LOGGER.debug("Processing binary artifact for module project: " + project.getId());
 
-                artifact = project.getArtifact();
+                artifact = MavenProjects.mainArtifact(configSource.getSession(), project);
             } else {
                 LOGGER.debug("Processing binary attachment: " + classifier + " for module project: " + project.getId());
 
-                artifact = MavenProjects.findArtifactByClassifier(project, classifier);
+                artifact = MavenProjects.findArtifactByClassifier(configSource.getSession(), project, classifier);
 
                 if (artifact == null) {
                     throw new InvalidAssemblerConfigurationException(
@@ -252,7 +252,7 @@ public class ModuleSetAssemblyPhase implements AssemblyArchiverPhase, PhaseOrder
         final List<DependencySet> depSets = getDependencySets(binaries);
 
         if (depSets != null) {
-            Map<DependencySet, Set<Artifact>> dependencySetSetMap =
+            Map<DependencySet, Set<AssemblyArtifact>> dependencySetSetMap =
                     dependencyResolver.resolveDependencySets(assembly, moduleSet, configSource, depSets);
 
             for (final DependencySet ds : depSets) {
@@ -262,13 +262,13 @@ public class ModuleSetAssemblyPhase implements AssemblyArchiverPhase, PhaseOrder
 
             // TODO: The following should be moved into a shared component, cause this
             // test is the same as in maven-enforce rules ReactorModuleConvergence.
-            List<MavenProject> validateModuleVersions = validateModuleVersions(moduleProjects);
+            List<Project> validateModuleVersions = validateModuleVersions(moduleProjects);
             if (!validateModuleVersions.isEmpty()) {
 
                 StringBuilder sb =
                         new StringBuilder().append("The current modules seemed to be having different versions.");
                 sb.append(LINE_SEPARATOR);
-                for (MavenProject mavenProject : validateModuleVersions) {
+                for (Project mavenProject : validateModuleVersions) {
                     sb.append(" --> ");
                     sb.append(mavenProject.getId());
                     sb.append(LINE_SEPARATOR);
@@ -276,15 +276,15 @@ public class ModuleSetAssemblyPhase implements AssemblyArchiverPhase, PhaseOrder
                 LOGGER.warn(sb.toString());
             }
 
-            for (final MavenProject moduleProject : moduleProjects) {
+            for (final Project moduleProject : moduleProjects) {
                 LOGGER.debug("Processing binary dependencies for module project: " + moduleProject.getId());
 
-                for (Map.Entry<DependencySet, Set<Artifact>> dependencySetSetEntry : dependencySetSetMap.entrySet()) {
+                for (Map.Entry<DependencySet, Set<AssemblyArtifact>> dependencySetSetEntry :
+                        dependencySetSetMap.entrySet()) {
                     final AddDependencySetsTask task = new AddDependencySetsTask(
                             Collections.singletonList(dependencySetSetEntry.getKey()),
                             dependencySetSetEntry.getValue(),
-                            moduleProject,
-                            projectBuilder);
+                            moduleProject);
 
                     task.setModuleProject(moduleProject);
                     task.setModuleArtifact(chosenModuleArtifacts.get(moduleProject));
@@ -297,13 +297,13 @@ public class ModuleSetAssemblyPhase implements AssemblyArchiverPhase, PhaseOrder
         }
     }
 
-    private List<MavenProject> validateModuleVersions(Set<MavenProject> moduleProjects) {
-        List<MavenProject> result = new ArrayList<>();
+    private List<Project> validateModuleVersions(Set<Project> moduleProjects) {
+        List<Project> result = new ArrayList<>();
 
         if (moduleProjects != null && !moduleProjects.isEmpty()) {
             String version = moduleProjects.iterator().next().getVersion();
             LOGGER.debug("First version:" + version);
-            for (MavenProject mavenProject : moduleProjects) {
+            for (Project mavenProject : moduleProjects) {
                 LOGGER.debug(" -> checking " + mavenProject.getId());
                 if (!version.equals(mavenProject.getVersion())) {
                     result.add(mavenProject);
@@ -314,16 +314,16 @@ public class ModuleSetAssemblyPhase implements AssemblyArchiverPhase, PhaseOrder
     }
 
     void addModuleArtifact(
-            final Artifact artifact,
-            final MavenProject project,
+            final AssemblyArtifact artifact,
+            final Project project,
             final Archiver archiver,
             final AssemblerConfigurationSource configSource,
             final ModuleBinaries binaries)
             throws ArchiveCreationException, AssemblyFormattingException {
         if (artifact.getFile() == null) {
-            throw new ArchiveCreationException(
-                    "Artifact: " + artifact.getId() + " (included by module) does not have an artifact with a file. "
-                            + "Please ensure the package phase is run before the assembly is generated.");
+            throw new ArchiveCreationException("AssemblyArtifact: " + artifact.getId()
+                    + " (included by module) does not have an artifact with a file. "
+                    + "Please ensure the package phase is run before the assembly is generated.");
         }
 
         final AddArtifactTask task = new AddArtifactTask(artifact, null);
@@ -356,7 +356,7 @@ public class ModuleSetAssemblyPhase implements AssemblyArchiverPhase, PhaseOrder
 
     void addModuleSourceFileSets(
             final ModuleSources sources,
-            final Set<MavenProject> moduleProjects,
+            final Set<Project> moduleProjects,
             final Archiver archiver,
             final AssemblerConfigurationSource configSource)
             throws ArchiveCreationException, AssemblyFormattingException {
@@ -387,7 +387,7 @@ public class ModuleSetAssemblyPhase implements AssemblyArchiverPhase, PhaseOrder
 
         fileSets.addAll(subFileSets);
 
-        for (final MavenProject moduleProject : moduleProjects) {
+        for (final Project moduleProject : moduleProjects) {
             LOGGER.info("Processing sources for module project: " + moduleProject.getId());
 
             final List<FileSet> moduleFileSets = new ArrayList<>();
@@ -425,14 +425,14 @@ public class ModuleSetAssemblyPhase implements AssemblyArchiverPhase, PhaseOrder
     FileSet createFileSet(
             final FileSet fileSet,
             final ModuleSources sources,
-            final MavenProject moduleProject,
+            final Project moduleProject,
             final AssemblerConfigurationSource configSource)
             throws AssemblyFormattingException {
         final FileSet fs = new FileSet();
 
         String sourcePath = fileSet.getDirectory();
 
-        final File moduleBasedir = moduleProject.getBasedir();
+        final File moduleBasedir = moduleProject.getBasedir().toFile();
 
         if (sourcePath != null) {
             final File sourceDir = new File(sourcePath);
@@ -455,7 +455,7 @@ public class ModuleSetAssemblyPhase implements AssemblyArchiverPhase, PhaseOrder
         }
 
         if (sources.isExcludeSubModuleDirectories()) {
-            final List<String> modules = moduleProject.getModules();
+            final List<String> modules = moduleProject.getModel().getModules();
             for (final String moduleSubPath : modules) {
                 excludes.add(moduleSubPath + "/**");
             }
@@ -468,16 +468,16 @@ public class ModuleSetAssemblyPhase implements AssemblyArchiverPhase, PhaseOrder
         fs.setLineEnding(fileSet.getLineEnding());
 
         FixedStringSearchInterpolator moduleProjectInterpolator =
-                AssemblyFormatUtils.moduleProjectInterpolator(moduleProject);
+                AssemblyFormatUtils.moduleProjectInterpolator(configSource.getSession(), moduleProject);
         FixedStringSearchInterpolator artifactProjectInterpolator =
-                AssemblyFormatUtils.artifactProjectInterpolator(moduleProject);
+                AssemblyFormatUtils.artifactProjectInterpolator(configSource.getSession(), moduleProject);
         String destPathPrefix = "";
         if (sources.isIncludeModuleDirectory()) {
             destPathPrefix = AssemblyFormatUtils.evaluateFileNameMapping(
                     sources.getOutputDirectoryMapping(),
-                    moduleProject.getArtifact(),
+                    MavenProjects.mainArtifact(configSource.getSession(), moduleProject),
                     configSource.getProject(),
-                    moduleProject.getArtifact(),
+                    MavenProjects.mainArtifact(configSource.getSession(), moduleProject),
                     configSource,
                     moduleProjectInterpolator,
                     artifactProjectInterpolator);

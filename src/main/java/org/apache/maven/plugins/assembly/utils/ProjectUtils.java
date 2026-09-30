@@ -24,10 +24,12 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Properties;
 import java.util.Set;
 
-import org.apache.maven.artifact.Artifact;
-import org.apache.maven.project.MavenProject;
+import org.apache.maven.api.Project;
+import org.apache.maven.plugins.assembly.artifact.AssemblyArtifact;
 import org.slf4j.Logger;
 
 /**
@@ -37,7 +39,7 @@ public final class ProjectUtils {
 
     private ProjectUtils() {}
 
-    public static String getClassifier(Artifact artifact) {
+    public static String getClassifier(AssemblyArtifact artifact) {
         String classifier = artifact.getClassifier();
         if (classifier != null && classifier.length() == 0) {
             classifier = null;
@@ -45,17 +47,56 @@ public final class ProjectUtils {
         return classifier;
     }
 
-    public static Set<MavenProject> getProjectModules(
-            final MavenProject project,
-            final List<MavenProject> reactorProjects,
+    /**
+     * The object that descriptor expressions such as <code>${project.build.directory}</code> are evaluated against.
+     * A Maven 4 {@link Project} has no {@code getBuild()}-style bean surface of its own, so the effective model stands
+     * in for the Maven 3 {@code MavenProject}.
+     */
+    public static Object interpolationRoot(final Project project) {
+        return project.getModel();
+    }
+
+    /**
+     * The expressions a Maven 3 {@code MavenProject} answered that are not part of the model.
+     */
+    public static Properties interpolationExtras(final Project project) {
+        final Properties extras = new Properties();
+        if (project.getBasedir() != null) {
+            extras.setProperty("basedir", project.getBasedir().toString());
+        }
+        if (project.getPomPath() != null) {
+            extras.setProperty("file", project.getPomPath().toString());
+        }
+        extras.setProperty("id", project.getId());
+        return extras;
+    }
+
+    /**
+     * The properties of the effective model.
+     */
+    public static Properties properties(final Project project) {
+        return toProperties(project.getModel().getProperties());
+    }
+
+    public static Properties toProperties(final Map<String, String> map) {
+        final Properties properties = new Properties();
+        if (map != null) {
+            properties.putAll(map);
+        }
+        return properties;
+    }
+
+    public static Set<Project> getProjectModules(
+            final Project project,
+            final List<Project> reactorProjects,
             final boolean includeSubModules,
             final Logger logger)
             throws IOException {
-        final Set<MavenProject> singleParentSet = Collections.singleton(project);
+        final Set<Project> singleParentSet = Collections.singleton(project);
 
-        final Set<MavenProject> moduleCandidates = new LinkedHashSet<>(reactorProjects);
+        final Set<Project> moduleCandidates = new LinkedHashSet<>(reactorProjects);
 
-        final Set<MavenProject> modules = new LinkedHashSet<>();
+        final Set<Project> modules = new LinkedHashSet<>();
 
         // we temporarily add the master project to the modules set, since this
         // set is pulling double duty as a set of
@@ -70,25 +111,25 @@ public final class ProjectUtils {
         do {
             changed = 0;
 
-            for (final Iterator<MavenProject> candidateIterator = moduleCandidates.iterator();
+            for (final Iterator<Project> candidateIterator = moduleCandidates.iterator();
                     candidateIterator.hasNext(); ) {
-                final MavenProject moduleCandidate = candidateIterator.next();
+                final Project moduleCandidate = candidateIterator.next();
 
-                if (moduleCandidate.getFile() == null) {
+                if (moduleCandidate.getPomPath() == null) {
                     logger.warn("Cannot compute whether " + moduleCandidate.getId() + " is a module of: "
                             + project.getId() + "; it does not have an associated POM file on the local filesystem.");
                     continue;
                 }
 
-                Set<MavenProject> currentPotentialParents;
+                Set<Project> currentPotentialParents;
                 if (includeSubModules) {
                     currentPotentialParents = new LinkedHashSet<>(modules);
                 } else {
                     currentPotentialParents = singleParentSet;
                 }
 
-                for (final MavenProject potentialParent : currentPotentialParents) {
-                    if (potentialParent.getFile() == null) {
+                for (final Project potentialParent : currentPotentialParents) {
+                    if (potentialParent.getPomPath() == null) {
                         logger.warn("Cannot use: " + moduleCandidate.getId()
                                 + " as a potential module-parent while computing the module set for: "
                                 + project.getId()
@@ -127,14 +168,16 @@ public final class ProjectUtils {
         return modules;
     }
 
-    private static boolean projectContainsModule(final MavenProject mainProject, final MavenProject moduleProject)
+    private static boolean projectContainsModule(final Project mainProject, final Project moduleProject)
             throws IOException {
-        final List<String> modules = mainProject.getModules();
-        final File basedir = mainProject.getBasedir();
+        final List<String> modules = mainProject.getModel().getModules();
+        final File basedir = mainProject.getBasedir().toFile();
 
-        final File moduleFile = moduleProject.getFile().getCanonicalFile();
+        final File moduleFile = moduleProject.getPomPath().toFile().getCanonicalFile();
 
-        File moduleBasedir = moduleProject.getBasedir();
+        File moduleBasedir = moduleProject.getBasedir() == null
+                ? null
+                : moduleProject.getBasedir().toFile();
 
         if (moduleBasedir == null) {
             moduleBasedir = moduleFile.getParentFile();

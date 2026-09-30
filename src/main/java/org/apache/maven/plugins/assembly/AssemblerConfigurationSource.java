@@ -22,10 +22,10 @@ import java.io.File;
 import java.util.List;
 import java.util.Properties;
 
-import org.apache.maven.archiver.MavenArchiveConfiguration;
-import org.apache.maven.execution.MavenSession;
+import org.apache.maven.api.Project;
+import org.apache.maven.api.Session;
 import org.apache.maven.plugins.assembly.model.Assembly;
-import org.apache.maven.project.MavenProject;
+import org.apache.maven.shared.archiver.MavenArchiveConfiguration;
 import org.apache.maven.shared.filtering.MavenReaderFilter;
 import org.codehaus.plexus.interpolation.fixed.FixedStringSearchInterpolator;
 
@@ -61,7 +61,7 @@ public interface AssemblerConfigurationSource {
     /**
      * @return The Maven Project.
      */
-    MavenProject getProject();
+    Project getProject();
 
     /**
      * @return The site directory.
@@ -126,7 +126,7 @@ public interface AssemblerConfigurationSource {
     /**
      * @return The list of reactor projects.
      */
-    List<MavenProject> getReactorProjects();
+    List<Project> getReactorProjects();
 
     /**
      * @return Is this a test run.
@@ -146,7 +146,7 @@ public interface AssemblerConfigurationSource {
     /**
      * @return The maven session.
      */
-    MavenSession getMavenSession();
+    Session getSession();
 
     /**
      * @return The archiver configuration.

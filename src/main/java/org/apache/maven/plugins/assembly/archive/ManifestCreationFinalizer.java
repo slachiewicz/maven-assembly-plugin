@@ -27,11 +27,11 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.maven.archiver.MavenArchiveConfiguration;
-import org.apache.maven.archiver.MavenArchiver;
-import org.apache.maven.artifact.DependencyResolutionRequiredException;
-import org.apache.maven.execution.MavenSession;
-import org.apache.maven.project.MavenProject;
+import org.apache.maven.api.Project;
+import org.apache.maven.api.Session;
+import org.apache.maven.shared.archiver.MavenArchiveConfiguration;
+import org.apache.maven.shared.archiver.MavenArchiver;
+import org.apache.maven.shared.archiver.MavenArchiverException;
 import org.codehaus.plexus.archiver.AbstractArchiveFinalizer;
 import org.codehaus.plexus.archiver.Archiver;
 import org.codehaus.plexus.archiver.ArchiverException;
@@ -44,9 +44,9 @@ import org.codehaus.plexus.archiver.jar.ManifestException;
  */
 public class ManifestCreationFinalizer extends AbstractArchiveFinalizer {
 
-    private final MavenProject project;
+    private final Project project;
 
-    private final MavenSession session;
+    private final Session session;
 
     private final MavenArchiveConfiguration archiveConfiguration;
 
@@ -58,9 +58,7 @@ public class ManifestCreationFinalizer extends AbstractArchiveFinalizer {
     private final MavenArchiver mavenArchiver = new MavenArchiver();
 
     public ManifestCreationFinalizer(
-            final MavenSession session,
-            final MavenProject project,
-            final MavenArchiveConfiguration archiveConfiguration) {
+            final Session session, final Project project, final MavenArchiveConfiguration archiveConfiguration) {
         this.session = session;
         this.project = project;
         this.archiveConfiguration = archiveConfiguration;
@@ -71,7 +69,9 @@ public class ManifestCreationFinalizer extends AbstractArchiveFinalizer {
         if (archiveConfiguration != null) {
             try {
                 Manifest manifest;
-                final File manifestFile = archiveConfiguration.getManifestFile();
+                final File manifestFile = archiveConfiguration.getManifestFile() == null
+                        ? null
+                        : archiveConfiguration.getManifestFile().toFile();
 
                 if (manifestFile != null) {
                     try (InputStream in = new FileInputStream(manifestFile)) {
@@ -98,10 +98,8 @@ public class ManifestCreationFinalizer extends AbstractArchiveFinalizer {
                     final JarArchiver jarArchiver = (JarArchiver) archiver;
                     jarArchiver.addConfiguredManifest(manifest);
                 }
-            } catch (final ManifestException e) {
+            } catch (final ManifestException | MavenArchiverException e) {
                 throw new ArchiverException("Error creating manifest: " + e.getMessage(), e);
-            } catch (final DependencyResolutionRequiredException e) {
-                throw new ArchiverException("Dependencies were not resolved: " + e.getMessage(), e);
             }
         }
     }
@@ -110,10 +108,10 @@ public class ManifestCreationFinalizer extends AbstractArchiveFinalizer {
     public List<String> getVirtualFiles() {
         if (archiveConfiguration != null) {
             try {
-                if (mavenArchiver.getManifest(project, archiveConfiguration.getManifest()) != null) {
+                if (mavenArchiver.getManifest(session, project, archiveConfiguration.getManifest()) != null) {
                     return Collections.singletonList("META-INF/MANIFEST.MF");
                 }
-            } catch (final ManifestException | DependencyResolutionRequiredException ignore) {
+            } catch (final MavenArchiverException ignore) {
                 // noop
             }
         }

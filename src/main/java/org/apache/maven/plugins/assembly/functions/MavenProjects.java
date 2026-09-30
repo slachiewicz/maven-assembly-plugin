@@ -18,41 +18,45 @@
  */
 package org.apache.maven.plugins.assembly.functions;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
-import org.apache.maven.artifact.Artifact;
-import org.apache.maven.artifact.ArtifactUtils;
-import org.apache.maven.project.MavenProject;
+import org.apache.maven.api.ProducedArtifact;
+import org.apache.maven.api.Project;
+import org.apache.maven.api.Session;
+import org.apache.maven.api.services.ArtifactManager;
+import org.apache.maven.api.services.ProjectManager;
+import org.apache.maven.plugins.assembly.artifact.AssemblyArtifact;
 import org.slf4j.Logger;
 
 /**
  *
  */
 public class MavenProjects {
-    public static void without(Iterable<MavenProject> source, String packagingType, MavenProjectConsumer consumer) {
-        for (MavenProject project : source) {
-            if (!packagingType.equals(project.getPackaging())) {
+    public static void without(Iterable<Project> source, String packagingType, MavenProjectConsumer consumer) {
+        for (Project project : source) {
+            if (!packagingType.equals(project.getPackaging().id())) {
                 consumer.accept(project);
             }
         }
     }
 
-    public static void select(Iterable<MavenProject> source, String packagingType, MavenProjectConsumer consumer) {
-        for (MavenProject project : source) {
-            if (packagingType.equals(project.getPackaging())) {
+    public static void select(Iterable<Project> source, String packagingType, MavenProjectConsumer consumer) {
+        for (Project project : source) {
+            if (packagingType.equals(project.getPackaging().id())) {
                 consumer.accept(project);
             }
         }
     }
 
     public static void select(
-            Iterable<MavenProject> source,
+            Iterable<Project> source,
             String packagingType,
             MavenProjectConsumer include,
             MavenProjectConsumer excluded) {
-        for (MavenProject project : source) {
-            if (packagingType.equals(project.getPackaging())) {
+        for (Project project : source) {
+            if (packagingType.equals(project.getPackaging().id())) {
                 include.accept(project);
             } else {
                 excluded.accept(project);
@@ -60,13 +64,50 @@ public class MavenProjects {
         }
     }
 
-    public static Artifact findArtifactByClassifier(MavenProject mavenProject, String classifier) {
-        final List<Artifact> attachments = mavenProject.getAttachedArtifacts();
-        if ((attachments != null) && !attachments.isEmpty()) {
-            for (final Artifact attachment : attachments) {
-                if (classifier.equals(attachment.getClassifier())) {
-                    return attachment;
-                }
+    /**
+     * The main artifact of the project, as {@code MavenProject#getArtifact()} used to return it: always present, with
+     * a file only once the project has been packaged.
+     */
+    public static AssemblyArtifact mainArtifact(Session session, Project project) {
+        final ArtifactManager artifactManager = session.getService(ArtifactManager.class);
+        final java.util.Optional<ProducedArtifact> main = project.getMainArtifact();
+        final ProducedArtifact artifact = main.orElseGet(project::getPomArtifact);
+        // a project with pom packaging produces no main artifact, as with Maven 3 its artifact has no file
+        final java.nio.file.Path path =
+                main.isPresent() ? artifactManager.getPath(artifact).orElse(null) : null;
+        return AssemblyArtifact.ofProduced(
+                session, artifact, project.getPackaging().type().id(), path == null ? null : path.toFile());
+    }
+
+    /**
+     * The artifacts attached to the project, as {@code MavenProject#getAttachedArtifacts()} used to return them.
+     */
+    public static List<AssemblyArtifact> attachedArtifacts(Session session, Project project) {
+        final ProjectManager projectManager = session.getService(ProjectManager.class);
+        final ArtifactManager artifactManager = session.getService(ArtifactManager.class);
+        final List<AssemblyArtifact> result = new ArrayList<>();
+        for (final ProducedArtifact attachment : projectManager.getAttachedArtifacts(project)) {
+            result.add(AssemblyArtifact.ofProduced(
+                    session,
+                    attachment,
+                    attachment.getExtension(),
+                    artifactManager
+                            .getPath(attachment)
+                            .map(java.nio.file.Path::toFile)
+                            .orElse(null)));
+        }
+        return result;
+    }
+
+    /**
+     * Finds the attached artifact with the given classifier.
+     *
+     * @return the artifact, or {@code null} if the project has no attachment with that classifier
+     */
+    public static AssemblyArtifact findArtifactByClassifier(Session session, Project project, String classifier) {
+        for (final AssemblyArtifact attachment : attachedArtifacts(session, project)) {
+            if (classifier.equals(attachment.getClassifier())) {
+                return attachment;
             }
         }
         return null;
@@ -75,18 +116,18 @@ public class MavenProjects {
     public static MavenProjectConsumer log(final Logger logger) {
         return new MavenProjectConsumer() {
             @Override
-            public void accept(MavenProject project) {
-                final String projectId = ArtifactUtils.versionlessKey(project.getGroupId(), project.getArtifactId());
+            public void accept(Project project) {
+                final String projectId = project.getGroupId() + ":" + project.getArtifactId();
 
                 logger.debug("Excluding POM-packaging module: " + projectId);
             }
         };
     }
 
-    public static MavenProjectConsumer addTo(final Set<MavenProject> set) {
+    public static MavenProjectConsumer addTo(final Set<Project> set) {
         return new MavenProjectConsumer() {
             @Override
-            public void accept(MavenProject project) {
+            public void accept(Project project) {
                 set.add(project);
             }
         };

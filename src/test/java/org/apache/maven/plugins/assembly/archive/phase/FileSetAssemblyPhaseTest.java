@@ -18,12 +18,12 @@
  */
 package org.apache.maven.plugins.assembly.archive.phase;
 
-import org.apache.maven.model.Model;
+import org.apache.maven.api.Project;
 import org.apache.maven.plugins.assembly.AssemblerConfigurationSource;
 import org.apache.maven.plugins.assembly.archive.DefaultAssemblyArchiverTest;
 import org.apache.maven.plugins.assembly.model.Assembly;
 import org.apache.maven.plugins.assembly.model.FileSet;
-import org.apache.maven.project.MavenProject;
+import org.apache.maven.plugins.assembly.testutils.TestStubs;
 import org.codehaus.plexus.archiver.Archiver;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -70,8 +70,7 @@ class FileSetAssemblyPhaseTest {
 
         assembly.addFileSet(fs);
 
-        final MavenProject project = new MavenProject(new Model());
-        project.setGroupId("GROUPID");
+        final Project project = TestStubs.project("GROUPID", "artifact", "1.0");
 
         final int dirMode = Integer.parseInt("777", 8);
         final int fileMode = Integer.parseInt("777", 8);
@@ -94,7 +93,7 @@ class FileSetAssemblyPhaseTest {
         // result of easymock migration, should be assert of expected result instead of verifying methodcalls
         verify(configSource).getArchiveBaseDirectory();
         verify(configSource, atLeastOnce()).getFinalName();
-        verify(configSource, atLeastOnce()).getMavenSession();
+        verify(configSource, atLeastOnce()).getSession();
         verify(configSource, atLeastOnce()).getProject();
 
         verify(archiver).getOverrideDirectoryMode();
