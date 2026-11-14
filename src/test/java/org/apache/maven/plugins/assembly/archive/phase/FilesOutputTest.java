@@ -138,7 +138,7 @@ class FilesOutputTest {
     @Test
     void destNameWithSubdirectoryIsPlacedBelowBaseDirectory() throws Exception {
         AssemblyRunner runner = new AssemblyRunner(projectDir);
-        runner.project().getProperties().setProperty("mine.includeBaseDirectory", "true");
+        runner.projectProperty("mine.includeBaseDirectory", "true");
         runner.write("structure/README.txt", "BLA BLI\n");
 
         File out = runner.build(

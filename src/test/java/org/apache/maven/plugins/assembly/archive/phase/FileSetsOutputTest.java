@@ -256,9 +256,9 @@ class FileSetsOutputTest {
     @Test
     void outputDirectoryAndIncludesUseProjectProperties() throws Exception {
         AssemblyRunner runner = runner();
-        runner.project().getProperties().setProperty("fileLocation", "file/path");
-        runner.project().getProperties().setProperty("fileLocation2", "file2/path");
-        runner.project().getProperties().setProperty("fileLocation3", "file3/path");
+        runner.projectProperty("fileLocation", "file/path");
+        runner.projectProperty("fileLocation2", "file2/path");
+        runner.projectProperty("fileLocation3", "file3/path");
         runner.write("src/main/files/some.file", "x");
 
         File out = runner.build(
@@ -416,7 +416,7 @@ class FileSetsOutputTest {
     void propertiesFileWithLatin1KeyIsFilteredWithNonAsciiProjectProperty() throws Exception {
         // MASSEMBLY-736: the project encoding is UTF-8, the properties file is ISO-8859-1
         AssemblyRunner runner = new AssemblyRunner(projectDir).withFiltering();
-        runner.project().getProperties().setProperty("anExpr", "\u00fcber");
+        runner.projectProperty("anExpr", "\u00fcber");
         File input = runner.write("src/main/config/file-1.properties", "");
         Files.write(input.toPath(), "b\u00f8s=${anExpr}\n\n".getBytes(StandardCharsets.ISO_8859_1));
 

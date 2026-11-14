@@ -24,37 +24,37 @@ import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Properties;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import org.apache.maven.execution.MavenSession;
-import org.apache.maven.model.Build;
-import org.apache.maven.model.Model;
+import org.apache.maven.api.Project;
+import org.apache.maven.api.Session;
+import org.apache.maven.api.model.Build;
+import org.apache.maven.api.model.Model;
 import org.apache.maven.plugins.assembly.archive.DefaultAssemblyArchiver;
 import org.apache.maven.plugins.assembly.archive.phase.AssemblyArchiverPhase;
 import org.apache.maven.plugins.assembly.archive.phase.FileItemAssemblyPhase;
 import org.apache.maven.plugins.assembly.archive.phase.FileSetAssemblyPhase;
+import org.apache.maven.plugins.assembly.filter.ComponentsXmlArchiverFileFilter;
 import org.apache.maven.plugins.assembly.filter.ContainerDescriptorHandler;
+import org.apache.maven.plugins.assembly.filter.MetaInfServicesHandler;
+import org.apache.maven.plugins.assembly.filter.MetaInfSpringHandler;
+import org.apache.maven.plugins.assembly.filter.SimpleAggregatingDescriptorHandler;
 import org.apache.maven.plugins.assembly.io.DefaultAssemblyReader;
 import org.apache.maven.plugins.assembly.model.Assembly;
 import org.apache.maven.plugins.assembly.mojos.AbstractAssemblyMojo;
-import org.apache.maven.project.MavenProject;
-import org.apache.maven.shared.filtering.MavenReaderFilter;
-import org.codehaus.plexus.DefaultContainerConfiguration;
-import org.codehaus.plexus.DefaultPlexusContainer;
-import org.codehaus.plexus.PlexusConstants;
-import org.codehaus.plexus.PlexusContainer;
-import org.codehaus.plexus.archiver.manager.ArchiverManager;
+import org.apache.maven.shared.filtering.DefaultMavenReaderFilter;
+import org.codehaus.plexus.archiver.manager.ServiceLoaderArchiverManager;
 import org.codehaus.plexus.build.BuildContext;
-import org.codehaus.plexus.component.configurator.BasicComponentConfigurator;
 import org.codehaus.plexus.interpolation.fixed.FixedStringSearchInterpolator;
 
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 /**
  * Runs an assembly descriptor through the real {@link DefaultAssemblyArchiver} (real archivers, the
@@ -67,38 +67,13 @@ public final class AssemblyRunner {
 
     private final PojoConfigSource configSource = new PojoConfigSource();
 
-    private final MavenProject project;
+    private final Map<String, String> projectProperties = new LinkedHashMap<>();
 
-    private final PlexusContainer container;
+    private Project project;
 
-    private static PlexusContainer sharedContainer;
-
-    // scanning the class path takes about a second, so the archiver components are looked up once per JVM
-    private static synchronized PlexusContainer container() throws Exception {
-        if (sharedContainer == null) {
-            DefaultContainerConfiguration containerConfiguration = new DefaultContainerConfiguration();
-            containerConfiguration.setClassPathScanning(PlexusConstants.SCANNING_INDEX);
-            containerConfiguration.setAutoWiring(true);
-            sharedContainer = new DefaultPlexusContainer(containerConfiguration);
-        }
-        return sharedContainer;
-    }
-
-    public AssemblyRunner(File projectDir) throws Exception {
+    public AssemblyRunner(File projectDir) {
         this.projectDir = projectDir;
-        Model model = new Model();
-        model.setGroupId("test");
-        model.setArtifactId("it");
-        model.setVersion("1.0-SNAPSHOT");
-        Build build = new Build();
-        build.setDirectory(new File(projectDir, "target").getAbsolutePath());
-        build.setOutputDirectory(new File(projectDir, "target/classes").getAbsolutePath());
-        model.setBuild(build);
-        project = new MavenProject(model);
-        project.setFile(new File(projectDir, "pom.xml"));
-        container = container();
 
-        configSource.setMavenProject(project);
         configSource.setBasedir(projectDir);
         configSource.setWorkingDirectory(new File(projectDir, "target/assembly/work"));
         configSource.setOutputDirectory(new File(projectDir, "target"));
@@ -110,20 +85,45 @@ public final class AssemblyRunner {
         configSource.setRootInterpolator(FixedStringSearchInterpolator.empty());
         configSource.setEnvInterpolator(FixedStringSearchInterpolator.empty());
         configSource.setEnvironmentInterpolator(FixedStringSearchInterpolator.empty());
+        rebuildProject();
+    }
+
+    // the Maven 4 model is immutable, so a project property change builds the model and the project stand-in again
+    private void rebuildProject() {
+        Build build = Build.newBuilder()
+                .directory(new File(projectDir, "target").getAbsolutePath())
+                .outputDirectory(new File(projectDir, "target/classes").getAbsolutePath())
+                .build();
+        Model model = Model.newBuilder()
+                .groupId("test")
+                .artifactId("it")
+                .version("1.0-SNAPSHOT")
+                .build(build)
+                .properties(projectProperties)
+                .build();
+        project = TestStubs.project(model, new File(projectDir, "pom.xml").toPath(), projectDir.toPath(), "jar");
+        configSource.setMavenProject(project);
         configSource.setMainProjectInterpolator(AbstractAssemblyMojo.mainProjectInterpolator(project));
+    }
+
+    /**
+     * Sets a property of the project, as a {@code <properties>} entry of the POM would.
+     */
+    public AssemblyRunner projectProperty(String name, String value) {
+        projectProperties.put(name, value);
+        rebuildProject();
+        return this;
     }
 
     /**
      * Wires the real maven-filtering reader filter and a session that exposes the JVM system properties, so that
      * {@code <filtered>true</filtered>} resources are interpolated as they are in a build.
      */
-    public AssemblyRunner withFiltering() throws Exception {
-        MavenSession session = mock(MavenSession.class);
-        when(session.getSystemProperties()).thenReturn(System.getProperties());
-        when(session.getUserProperties()).thenReturn(new Properties());
-        when(session.getExecutionProperties()).thenReturn(System.getProperties());
-        configSource.setMavenSession(session);
-        configSource.setMavenReaderFilter(container.lookup(MavenReaderFilter.class));
+    public AssemblyRunner withFiltering() {
+        Session session = TestStubs.session();
+        lenient().when(session.getSystemProperties()).thenReturn(TestStubs.toMap(System.getProperties()));
+        configSource.setSession(session);
+        configSource.setMavenReaderFilter(new DefaultMavenReaderFilter());
         return this;
     }
 
@@ -131,7 +131,7 @@ public final class AssemblyRunner {
         return configSource;
     }
 
-    public MavenProject project() {
+    public Project project() {
         return project;
     }
 
@@ -177,17 +177,21 @@ public final class AssemblyRunner {
      */
     public File build(String descriptorXml, String format) throws Exception {
         Assembly assembly = parse(descriptorXml);
-        ArchiverManager archiverManager = container.lookup(ArchiverManager.class);
         List<AssemblyArchiverPhase> phases = Arrays.asList(new FileItemAssemblyPhase(), new FileSetAssemblyPhase());
         DefaultAssemblyArchiver archiver = new DefaultAssemblyArchiver(
-                archiverManager,
-                phases,
-                container.lookupMap(ContainerDescriptorHandler.class),
-                container,
-                new BasicComponentConfigurator(),
-                mock(BuildContext.class));
+                new ServiceLoaderArchiverManager(), phases, AssemblyRunner::handlers, mock(BuildContext.class));
         String fullName = configSource.getFinalName() + "-" + assembly.getId();
         return archiver.createArchive(assembly, fullName, format, configSource, null);
+    }
+
+    // the handlers the plugin registers as @Named components, new instances for every build
+    private static Map<String, ContainerDescriptorHandler> handlers() {
+        Map<String, ContainerDescriptorHandler> handlers = new LinkedHashMap<>();
+        handlers.put("file-aggregator", new SimpleAggregatingDescriptorHandler());
+        handlers.put("metaInf-services", new MetaInfServicesHandler());
+        handlers.put("metaInf-spring", new MetaInfSpringHandler());
+        handlers.put("plexus", new ComponentsXmlArchiverFileFilter());
+        return handlers;
     }
 
     /**
