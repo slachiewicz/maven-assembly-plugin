@@ -81,7 +81,7 @@ under the License.
     <slf4jVersion>1.7.36</slf4jVersion>
     <mavenFilteringVersion>4.0.0-beta-2</mavenFilteringVersion>
     <mavenArchiverVersion>4.0.0-beta-6</mavenArchiverVersion>
-    <plexusArchiverVersion>5.0.0-SNAPSHOT</plexusArchiverVersion>
+    <plexusArchiverVersion>4.16.0</plexusArchiverVersion>
     <mavenCommonArtifactFiltersVersion>4.0.0-SNAPSHOT</mavenCommonArtifactFiltersVersion>
     <commonsIoVersion>2.22.0</commonsIoVersion>
     <testOutputToFile>true</testOutputToFile>
