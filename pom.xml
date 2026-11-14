@@ -79,8 +79,8 @@ under the License.
     <mavenVersion>4.0.0-rc-7</mavenVersion>
     <version.maven-plugin-tools>4.0.0-beta-3</version.maven-plugin-tools>
     <slf4jVersion>1.7.36</slf4jVersion>
-    <mavenFilteringVersion>4.0.0-beta-2-SNAPSHOT</mavenFilteringVersion>
-    <mavenArchiverVersion>4.0.0-beta-6-SNAPSHOT</mavenArchiverVersion>
+    <mavenFilteringVersion>4.0.0-beta-2</mavenFilteringVersion>
+    <mavenArchiverVersion>4.0.0-beta-6</mavenArchiverVersion>
     <plexusArchiverVersion>5.0.0-SNAPSHOT</plexusArchiverVersion>
     <mavenCommonArtifactFiltersVersion>4.0.0-SNAPSHOT</mavenCommonArtifactFiltersVersion>
     <commonsIoVersion>2.22.0</commonsIoVersion>
